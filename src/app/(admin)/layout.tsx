@@ -5,9 +5,11 @@ import {
   SettingOutlined, 
   DashboardOutlined, 
   SafetyCertificateOutlined,
-  AppstoreOutlined
+  AppstoreOutlined,
+  TagOutlined
 } from '@ant-design/icons';
 import UnifiedLayout, { MenuItem } from "@/layouts/UnifiedLayout";
+import path from 'node:path';
 
 const adminMenuData: MenuItem[] = [
   {
@@ -17,8 +19,16 @@ const adminMenuData: MenuItem[] = [
   },
   {
     path: '/admin/category',
-    name: '分类管理',
+    name: '数据能力建设',
     icon: <AppstoreOutlined />,
+    children: [
+      { path: "/admin/category/1", name: "产品类" },
+      { path: "/admin/category/3", name: "物料类" },
+      { path: "/admin/category/4", name: "BOM类" },
+      { path: "/admin/category/5", name: "工艺类" },
+      { path: "/admin/category/6", name: "测试类" },
+      { path: "/admin/category/7", name: "实验类" },
+    ],
   },
   {
     path: '/admin/users',

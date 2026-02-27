@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from "react";
-import DraggableModal from "@/components/DraggableModal";
 import {
   SaveOutlined,
   HistoryOutlined,
@@ -30,14 +29,10 @@ import dayjs from "dayjs";
 const { Header, Sider, Content } = Layout;
 
 interface Props {
-  open: boolean;
-  onCancel: () => void;
   currentNode?: { title?: string; code?: string; [key: string]: any };
 }
 
 const AttributeDesigner: React.FC<Props> = ({
-  open,
-  onCancel,
   currentNode,
 }) => {
   const { token } = theme.useToken();
@@ -119,12 +114,16 @@ const AttributeDesigner: React.FC<Props> = ({
   };
 
   useEffect(() => {
-    if (open && currentNode?.code) {
+    if (currentNode?.code) {
       loadAttributes(currentNode.code);
       setSelectedAttributeId(null);
       setCurrentAttribute(null);
+    } else {
+      setDataSource([]);
+      setSelectedAttributeId(null);
+      setCurrentAttribute(null);
     }
-  }, [open, currentNode]);
+  }, [currentNode]);
 
   // Sync currentAttribute from dataSource when selection changes
   useEffect(() => {
@@ -203,7 +202,7 @@ const AttributeDesigner: React.FC<Props> = ({
       id: `new_attr_${timestamp}`,
       code: `ATTR_${timestamp}`, 
       name: "New Attribute",
-      type: "string",
+      type: "enum",
       version: 1,
       isLatest: true,
     };
@@ -337,7 +336,14 @@ const AttributeDesigner: React.FC<Props> = ({
       }}
     >
       <Space>
-        
+        <Typography.Title level={5} style={{ margin: 0, marginRight: 16 }}>
+          {currentNode?.title || "未知对象 (Unknown Item)"}
+        </Typography.Title>
+        {hasUnsavedChanges && (
+           <Tag color="warning" variant="filled" style={{ marginRight: 16 }}>
+              未保存 (Unsaved Changes)
+           </Tag>
+        )}
         <Input
           placeholder="筛选属性 . . ."
           prefix={<SearchOutlined style={{ color: token.colorTextQuaternary }} />}
@@ -364,52 +370,38 @@ const AttributeDesigner: React.FC<Props> = ({
   );
 
   return (
-    <DraggableModal
-      title={modalTitle}
-      open={open}
-      onCancel={onCancel}
-      width="95%"
-      styles={{
-        body: { height: "85vh", padding: 0, overflow: "hidden" },
-      }}
-      footer={null}
-      destroyOnHidden={false}
-      maskClosable={false}
-    >
-      <Layout style={{ height: "100%", flexDirection: "column", overflow: "hidden" }}>
-        {renderToolbar()}
+    <Layout style={{ height: "100%", flexDirection: "column", overflow: "hidden" }}>
+      {renderToolbar()}
 
-        <Splitter style={{ flex: 1, minHeight: 0 }}>
-          <Splitter.Panel defaultSize={600} min={300} max={600} collapsible>
-            <AttributeList
-              dataSource={dataSource}
-              setDataSource={setDataSource}
-              selectedAttributeId={selectedAttributeId}
-              onSelectAttribute={(id) => setSelectedAttributeId(id)}
-              searchText={searchText}
-              onDeleteAttribute={handleDeleteAttribute}
-            />
-          </Splitter.Panel>
-          <Splitter.Panel>
-            <AttributeWorkspace
-              attribute={currentAttribute}
-              onUpdate={handleAttributeUpdate}
-              enumOptions={enumOptions}
-              setEnumOptions={setEnumOptions}
-              onSave={handleSingleSave}
-              onDiscard={(id) => {
-                setDataSource((prev) => prev.filter((item) => item.id !== id));
-                if (selectedAttributeId === id) {
-                  setSelectedAttributeId(null);
-                }
-              }}
-            />
-          </Splitter.Panel>
-        </Splitter>
-      </Layout>
-    </DraggableModal>
+      <Splitter style={{ flex: 1, minHeight: 0 }}>
+        <Splitter.Panel defaultSize={350} min={250} max={500} collapsible>
+          <AttributeList
+            dataSource={dataSource}
+            setDataSource={setDataSource}
+            selectedAttributeId={selectedAttributeId}
+            onSelectAttribute={(id) => setSelectedAttributeId(id)}
+            searchText={searchText}
+            onDeleteAttribute={handleDeleteAttribute}
+          />
+        </Splitter.Panel>
+        <Splitter.Panel>
+          <AttributeWorkspace
+            attribute={currentAttribute}
+            onUpdate={handleAttributeUpdate}
+            enumOptions={enumOptions}
+            setEnumOptions={setEnumOptions}
+            onSave={handleSingleSave}
+            onDiscard={(id) => {
+              setDataSource((prev) => prev.filter((item) => item.id !== id));
+              if (selectedAttributeId === id) {
+                setSelectedAttributeId(null);
+              }
+            }}
+          />
+        </Splitter.Panel>
+      </Splitter>
+    </Layout>
   );
 };
-
 
 export default AttributeDesigner;

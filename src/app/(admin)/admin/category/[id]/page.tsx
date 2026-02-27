@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { Splitter, message } from "antd";
 import type { DataNode, TreeProps } from "antd/es/tree";
-import CategoryTree from "./AdminCategoryTree";
+import CategoryTree from "../AdminCategoryTree";
 import {
   metaCategoryApi,
   MetaCategoryBrowseNodeDto,
@@ -13,28 +13,30 @@ import {
   PartitionOutlined,
   TagsOutlined,
 } from "@ant-design/icons";
-import CategoryList from "./CategoryList";
-import AttributeDesigner from "./AttributeDesigner";
+import { Descriptions } from "antd";
+import AttributeDesigner from "../AttributeDesigner";
+
+import { useParams } from "next/navigation";
 
 interface CategoryTreeNode extends Omit<DataNode, "children"> {
   children?: CategoryTreeNode[];
   dataRef?: MetaCategoryBrowseNodeDto;
-  level?: "segment" | "family" | "class" | "commodity";
+  level?: "segment" | "family" | "class" | "commodity" | "item";
   loaded?: boolean;
   familyCode?: string;
   classCode?: string; // For Commodity nodes to know their parent Class
+  commodityCode?: string;
 }
 
 const CategoryManagementPage: React.FC = () => {
+  const params = useParams();
+  const categoryId = params.id as string;
+
   const [selectedKey, setSelectedKey] = useState<React.Key>("");
   const [selectedNode, setSelectedNode] = useState<
     CategoryTreeNode | undefined
   >(undefined);
   const [leftCollapsed, setLeftCollapsed] = useState(false);
-
-  // Modal State
-  const [designModalOpen, setDesignModalOpen] = useState(false);
-  const [designTarget, setDesignTarget] = useState<any | null>(null);
 
   const [treeData, setTreeData] = useState<CategoryTreeNode[]>([]);
   const [loadedKeys, setLoadedKeys] = useState<React.Key[]>([]);
@@ -115,15 +117,29 @@ const CategoryManagementPage: React.FC = () => {
             childNodes = currentClassGroup.commodities.map((c) => ({
               title: `${c.code} - ${c.title}`,
               key: c.key,
-              isLeaf: true,
+              isLeaf: false, // Changed to false to allow loading items
               dataRef: c,
               level: "commodity",
-              icon: <TagsOutlined />,
+              icon: <PartitionOutlined />,
               familyCode: parentFamilyCode,
               classCode: dataRef?.code,
             }));
           }
         }
+      } else if (level === "commodity") {
+        // Load Items under Commodity
+        const groups = await metaCategoryApi.listUnspscClassesWithCommodities(
+          dataRef!.code,
+        );
+        childNodes = groups.map((g) => ({
+          title: `${g.clazz.code} - ${g.clazz.title}`,
+          key: g.clazz.key,
+          isLeaf: true,
+          dataRef: g.clazz,
+          level: "item",
+          icon: <TagsOutlined />,
+          commodityCode: dataRef!.code,
+        }));
       }
 
       setTreeData((origin) =>
@@ -165,10 +181,33 @@ const CategoryManagementPage: React.FC = () => {
     }
   };
 
-  const handleEnterDesign = (item: any) => {
-    setDesignTarget(item);
-    setDesignModalOpen(true);
+  const handleMenuClick = (key: string, node: any) => {
+    if (key === "design") {
+      // No longer using modal, just select the node
+      setSelectedKey(node.key);
+      setSelectedNode(node);
+    }
   };
+
+  if (categoryId !== "3") {
+    return (
+      <div
+        style={{
+          height: "calc(100vh - 163px)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: "var(--ant-color-bg-container, #fff)",
+          borderRadius: 8,
+          border: "1px solid var(--ant-color-border-secondary, #f0f0f0)",
+        }}
+      >
+        <div style={{ color: "#999", fontSize: 16 }}>
+          该分类下的数据能力建设功能正在开发中...
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -207,25 +246,37 @@ const CategoryManagementPage: React.FC = () => {
             loadData={onLoadData}
             loadedKeys={loadedKeys}
             onLoad={(keys) => setLoadedKeys(keys as React.Key[])}
+            onMenuClick={handleMenuClick}
           />
         </Splitter.Panel>
         <Splitter.Panel>
           {selectedNode ? (
-            <div
-              style={{
-                padding: "0 16px",
-                height: "100%",
-                display: "flex",
-                flexDirection: "column",
-                overflow: "hidden",
-              }}
-            >
-              <CategoryList
-                parentKey={selectedKey}
-                parentNode={selectedNode}
-                onDesignAttribute={handleEnterDesign}
-              />
-            </div>
+            (selectedNode.level === 'commodity' || selectedNode.level === 'class' || selectedNode.level === 'item') ? (
+              <AttributeDesigner currentNode={selectedNode.dataRef} />
+            ) : (
+              <div
+                style={{
+                  padding: "24px",
+                  height: "100%",
+                  display: "flex",
+                  flexDirection: "column",
+                  overflow: "auto",
+                }}
+              >
+                <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <h2 style={{ margin: 0 }}>{selectedNode.title as string}</h2>
+                </div>
+                
+                <Descriptions bordered column={1}>
+                  <Descriptions.Item label="分类编码">{selectedNode.dataRef?.code}</Descriptions.Item>
+                  <Descriptions.Item label="分类名称">{selectedNode.dataRef?.title}</Descriptions.Item>
+                  <Descriptions.Item label="分类级别">
+                    {selectedNode.level === 'segment' ? '大类 (Segment)' :
+                     selectedNode.level === 'family' ? '中类 (Family)' : '未知'}
+                  </Descriptions.Item>
+                </Descriptions>
+              </div>
+            )
           ) : (
             <div
               style={{
@@ -242,13 +293,6 @@ const CategoryManagementPage: React.FC = () => {
           )}
         </Splitter.Panel>
       </Splitter>
-
-       {/* Attribute Designer Modal */}
-       <AttributeDesigner 
-         open={designModalOpen}
-         onCancel={() => setDesignModalOpen(false)}
-         currentNode={designTarget}
-       />
     </div>
   );
 };
