@@ -159,10 +159,13 @@ const AttributeList: React.FC<AttributeListProps> = ({
                   background: isSelected
                     ? token.controlItemBgActive
                     : "transparent",
+                  position: "relative",
+                  paddingRight: "40px" // Make room for the absolute positioned action button
                 }}
                 className={!isSelected ? "hover:bg-gray-50" : ""} // Keep minimal tailwind for hover if not strict
                 onClick={() => onSelectAttribute(item.id, item)}
-                actions={[
+              >
+                <div style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)" }}>
                   <Dropdown
                     key="more"
                     menu={{ items: getMenuItems(item) }}
@@ -178,9 +181,8 @@ const AttributeList: React.FC<AttributeListProps> = ({
                       }
                       onClick={(e) => e.stopPropagation()}
                     />
-                  </Dropdown>,
-                ]}
-              >
+                  </Dropdown>
+                </div>
                 <div style={{ width: "100%" }}>
                   <Flex
                     justify="space-between"
@@ -216,14 +218,14 @@ const AttributeList: React.FC<AttributeListProps> = ({
                     )}
                   </Flex>
 
-                  <Flex align="center" style={{ gap: 8 }}>
-                    <Flex align="center" style={{ flex: 1, minWidth: 0 }}>
+                  <Flex align="center" style={{ gap: 8, flexWrap: "wrap" }}>
+                    <Flex align="center" style={{ flex: 1, minWidth: 0, flexWrap: "wrap", gap: 4 }}>
                       <span
                         style={{
-                          marginRight: 8,
                           display: "flex",
                           alignItems: "center",
                           gap: 4,
+                          whiteSpace: "nowrap"
                         }}
                         title={item.type}
                       >
@@ -234,14 +236,14 @@ const AttributeList: React.FC<AttributeListProps> = ({
                       </span>
                       <Text
                         type="secondary"
-                        style={{ fontSize: 12, fontFamily: "monospace" }}
+                        style={{ fontSize: 12, fontFamily: "monospace", whiteSpace: "nowrap" }}
                         ellipsis
                       >
                         编码: {item.code}
                       </Text>
                     </Flex>
 
-                    <Flex gap={2} style={{ flexShrink: 0 }}>
+                    <Flex gap={2} style={{ flexShrink: 0, flexWrap: "wrap" }}>
                       {item.hidden && (
                         <Tag
                           icon={<EyeInvisibleOutlined />}

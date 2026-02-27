@@ -189,7 +189,7 @@ const CategoryManagementPage: React.FC = () => {
     }
   };
 
-  if (categoryId !== "3") {
+  if (categoryId !== "2") {
     return (
       <div
         style={{
@@ -251,32 +251,7 @@ const CategoryManagementPage: React.FC = () => {
         </Splitter.Panel>
         <Splitter.Panel>
           {selectedNode ? (
-            (selectedNode.level === 'commodity' || selectedNode.level === 'class' || selectedNode.level === 'item') ? (
-              <AttributeDesigner currentNode={selectedNode.dataRef} />
-            ) : (
-              <div
-                style={{
-                  padding: "24px",
-                  height: "100%",
-                  display: "flex",
-                  flexDirection: "column",
-                  overflow: "auto",
-                }}
-              >
-                <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <h2 style={{ margin: 0 }}>{selectedNode.title as string}</h2>
-                </div>
-                
-                <Descriptions bordered column={1}>
-                  <Descriptions.Item label="分类编码">{selectedNode.dataRef?.code}</Descriptions.Item>
-                  <Descriptions.Item label="分类名称">{selectedNode.dataRef?.title}</Descriptions.Item>
-                  <Descriptions.Item label="分类级别">
-                    {selectedNode.level === 'segment' ? '大类 (Segment)' :
-                     selectedNode.level === 'family' ? '中类 (Family)' : '未知'}
-                  </Descriptions.Item>
-                </Descriptions>
-              </div>
-            )
+            <AttributeDesigner currentNode={selectedNode.dataRef} />
           ) : (
             <div
               style={{

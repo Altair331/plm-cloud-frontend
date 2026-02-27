@@ -23,11 +23,11 @@ const adminMenuData: MenuItem[] = [
     icon: <AppstoreOutlined />,
     children: [
       { path: "/admin/category/1", name: "产品类" },
-      { path: "/admin/category/3", name: "物料类" },
-      { path: "/admin/category/4", name: "BOM类" },
-      { path: "/admin/category/5", name: "工艺类" },
-      { path: "/admin/category/6", name: "测试类" },
-      { path: "/admin/category/7", name: "实验类" },
+      { path: "/admin/category/2", name: "物料类" },
+      { path: "/admin/category/3", name: "BOM类" },
+      { path: "/admin/category/4", name: "工艺类" },
+      { path: "/admin/category/5", name: "测试类" },
+      { path: "/admin/category/6", name: "实验类" },
     ],
   },
   {
