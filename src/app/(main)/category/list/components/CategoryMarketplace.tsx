@@ -126,12 +126,14 @@ const CategoryMarketplace: React.FC<CategoryMarketplaceProps> = ({ open, onCance
     setIsSearching(true);
     try {
       if (selectedLibrary === 'UNSPSC') {
-        const hits = await metaCategoryApi.searchUnspsc({ q, limit: 50 });
-        const results: CategoryItem[] = hits.map((hit) => ({
-          key: hit.key,
-          title: hit.title,
-          code: hit.code,
-          path: hit.fullPathName ? hit.fullPathName.split('/').filter(Boolean) : ['UNSPSC', hit.title],
+        const page = await metaCategoryApi.search({ taxonomy: 'UNSPSC', keyword: q, size: 50, page: 0 });
+        const results: CategoryItem[] = (page.content || []).map((hit) => ({
+          key: hit.node.id,
+          title: hit.node.name,
+          code: hit.node.code,
+          path: (hit.pathNodes && hit.pathNodes.length > 0)
+            ? hit.pathNodes.map((p) => p.name)
+            : ['UNSPSC', hit.node.name],
           library: 'UNSPSC',
         }));
         setSearchResults(results);

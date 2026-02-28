@@ -6,7 +6,7 @@ import type { DataNode, TreeProps } from "antd/es/tree";
 import CategoryTree from "../AdminCategoryTree";
 import {
   metaCategoryApi,
-  MetaCategoryBrowseNodeDto,
+  MetaCategoryNodeDto,
 } from "@/services/metaCategory";
 import {
   AppstoreOutlined,
@@ -20,12 +20,18 @@ import { useParams } from "next/navigation";
 
 interface CategoryTreeNode extends Omit<DataNode, "children"> {
   children?: CategoryTreeNode[];
-  dataRef?: MetaCategoryBrowseNodeDto;
+  dataRef?: CategoryNodeRef;
   level?: "segment" | "family" | "class" | "commodity" | "item";
   loaded?: boolean;
   familyCode?: string;
   classCode?: string; // For Commodity nodes to know their parent Class
   commodityCode?: string;
+}
+
+interface CategoryNodeRef extends MetaCategoryNodeDto {
+  key?: string;
+  title?: string;
+  depth?: number;
 }
 
 const getChildLevel = (
@@ -44,6 +50,14 @@ const getDefaultIconByLevel = (level?: CategoryTreeNode["level"]) => {
     return <PartitionOutlined />;
   }
   return <TagsOutlined />;
+};
+
+const getLevelByNumber = (level?: number): CategoryTreeNode["level"] => {
+  if (level === 1) return "segment";
+  if (level === 2) return "family";
+  if (level === 3) return "class";
+  if (level === 4) return "commodity";
+  return "item";
 };
 
 const CategoryManagementPage: React.FC = () => {
@@ -100,15 +114,24 @@ const CategoryManagementPage: React.FC = () => {
 
   const loadSegments = async () => {
     try {
-      const segments = await metaCategoryApi.listUnspscSegments();
-      const nodes: CategoryTreeNode[] = (Array.isArray(segments) ? segments : []).map((s) => ({
-        title: `${s.code} - ${s.title}`,
-        key: s.key,
-        isLeaf: false,
-        dataRef: s,
-        level: "segment",
-        icon: <AppstoreOutlined />,
-      }));
+      const page = await metaCategoryApi.listNodes({ taxonomy: "UNSPSC", level: 1, page: 0, size: 200 });
+      const nodes: CategoryTreeNode[] = (Array.isArray(page.content) ? page.content : []).map((s) => {
+        const ref: CategoryNodeRef = {
+          ...s,
+          key: s.id,
+          title: s.name,
+          depth: (s.level ?? 1) - 1,
+        };
+        const level = getLevelByNumber(s.level);
+        return {
+          title: `${s.code} - ${s.name}`,
+          key: s.id,
+          isLeaf: !s.hasChildren,
+          dataRef: ref,
+          level,
+          icon: getDefaultIconByLevel(level),
+        };
+      });
       setTreeData(nodes);
       setLoadedKeys([]);
     } catch (error) {
@@ -118,81 +141,34 @@ const CategoryManagementPage: React.FC = () => {
   };
 
   const onLoadData = async (node: any): Promise<void> => {
-    const { key, children, dataRef, level } = node as CategoryTreeNode;
+    const { key, children } = node as CategoryTreeNode;
     if (children && children.length > 0) return;
 
     try {
-      let childNodes: CategoryTreeNode[] = [];
+      const page = await metaCategoryApi.listNodes({
+        taxonomy: "UNSPSC",
+        parentId: String(key),
+        page: 0,
+        size: 200,
+      });
 
-      if (level === "segment") {
-        // Load Families
-        const families = await metaCategoryApi.listUnspscFamilies(
-          dataRef!.code,
-        );
-        childNodes = families.map((f) => ({
-          title: `${f.code} - ${f.title}`,
-          key: f.key,
-          isLeaf: false,
-          dataRef: f,
-          level: "family",
-          icon: <PartitionOutlined />,
-        }));
-      } else if (level === "family") {
-        // Load Classes
-        const groups = await metaCategoryApi.listUnspscClassesWithCommodities(
-          dataRef!.code,
-        );
-        childNodes = groups.map((g) => ({
-          title: `${g.clazz.code} - ${g.clazz.title}`,
-          key: g.clazz.key,
-          isLeaf: !g.commodities || g.commodities.length === 0,
-          dataRef: g.clazz,
-          level: "class",
-          icon: <PartitionOutlined />,
-          familyCode: dataRef!.code,
-        }));
-      } else if (level === "class") {
-        // Load Commodities
-        // Since listUnspscClassesWithCommodities is by family, we need finding the parent family code
-        // Which we passed down as node.familyCode
-        const parentFamilyCode = (node as CategoryTreeNode).familyCode;
-        if (parentFamilyCode) {
-          const groups =
-            await metaCategoryApi.listUnspscClassesWithCommodities(
-              parentFamilyCode,
-            );
-          // Find current class group
-          const currentClassGroup = groups.find(
-            (g) => g.clazz.key === dataRef?.key,
-          );
-          if (currentClassGroup && currentClassGroup.commodities) {
-            childNodes = currentClassGroup.commodities.map((c) => ({
-              title: `${c.code} - ${c.title}`,
-              key: c.key,
-              isLeaf: false,
-              dataRef: c,
-              level: "commodity",
-              icon: <PartitionOutlined />,
-              familyCode: parentFamilyCode,
-              classCode: dataRef?.code,
-            }));
-          }
-        }
-      } else if (level === "commodity") {
-        // Load Items under Commodity
-        const groups = await metaCategoryApi.listUnspscClassesWithCommodities(
-          dataRef!.code,
-        );
-        childNodes = groups.map((g) => ({
-          title: `${g.clazz.code} - ${g.clazz.title}`,
-          key: g.clazz.key,
-          isLeaf: true,
-          dataRef: g.clazz,
-          level: "item",
-          icon: <TagsOutlined />,
-          commodityCode: dataRef!.code,
-        }));
-      }
+      const childNodes: CategoryTreeNode[] = (page.content || []).map((c) => {
+        const ref: CategoryNodeRef = {
+          ...c,
+          key: c.id,
+          title: c.name,
+          depth: (c.level ?? 1) - 1,
+        };
+        const childLevel = getLevelByNumber(c.level);
+        return {
+          title: `${c.code} - ${c.name}`,
+          key: c.id,
+          isLeaf: !c.hasChildren,
+          dataRef: ref,
+          level: childLevel,
+          icon: getDefaultIconByLevel(childLevel),
+        };
+      });
 
       setTreeData((origin) =>
         updateTreeData(origin, key as React.Key, childNodes),
@@ -268,14 +244,19 @@ const CategoryManagementPage: React.FC = () => {
           }
 
           const localCode = `LOCAL_${Date.now()}`;
+          const levelNumber = ((node.dataRef?.level ?? 1) + 1);
           const childNode: CategoryTreeNode = {
             key: `local_${childLevel}_${Date.now()}`,
             title: `${localCode} - ${trimmed}`,
             dataRef: {
+              id: `local_${childLevel}_${Date.now()}`,
+              taxonomy: "UNSPSC",
               key: `local_${childLevel}_${Date.now()}`,
               code: localCode,
+              name: trimmed,
               title: trimmed,
               hasChildren: childLevel !== "commodity" && childLevel !== "item",
+              level: levelNumber,
               depth: (node.dataRef?.depth ?? 0) + 1,
             },
             level: childLevel,
@@ -330,7 +311,7 @@ const CategoryManagementPage: React.FC = () => {
                 ...targetNode,
                 title: `${code} - ${trimmed}`,
                 dataRef: targetNode.dataRef
-                  ? { ...targetNode.dataRef, title: trimmed }
+                  ? { ...targetNode.dataRef, name: trimmed, title: trimmed }
                   : targetNode.dataRef,
               };
             }),
@@ -343,7 +324,7 @@ const CategoryManagementPage: React.FC = () => {
                     ...prev,
                     title: `${prev.dataRef?.code || "LOCAL"} - ${trimmed}`,
                     dataRef: prev.dataRef
-                      ? { ...prev.dataRef, title: trimmed }
+                      ? { ...prev.dataRef, name: trimmed, title: trimmed }
                       : prev.dataRef,
                   }
                 : prev,

@@ -1,49 +1,92 @@
 import request from './request';
 
-// --- DTOs matching backend ---
+export interface PageResponse<T> {
+  content: T[];
+  totalElements: number;
+  totalPages: number;
+  size: number;
+  number: number;
+}
 
-export interface MetaCategoryBrowseNodeDto {
-  key: string;
+export interface MetaCategoryNodeDto {
+  id: string;
+  taxonomy: string;
   code: string;
-  title: string;
+  name: string;
+  level?: number;
+  parentId?: string | null;
+  path?: string | null;
   hasChildren: boolean;
-  depth: number;
-  fullPathName?: string;
+  leaf?: boolean;
+  status?: string;
+  sort?: number;
+  createdAt?: string;
+  updatedAt?: string | null;
 }
 
-export interface MetaCategoryClassGroupDto {
-  clazz: MetaCategoryBrowseNodeDto;
-  commodities: MetaCategoryBrowseNodeDto[];
+export interface MetaCategorySearchItemDto {
+  node: MetaCategoryNodeDto;
+  path?: string | null;
+  pathNodes?: MetaCategoryNodeDto[];
 }
 
-export interface MetaCategorySearchHitDto {
-  key: string;
+export interface MetaCategoryChildrenBatchRequestDto {
+  taxonomy: string;
+  parentIds: string[];
+  status?: string;
+}
+
+export interface MetaTaxonomyLevelConfigDto {
+  level: number;
+  displayName: string;
+}
+
+export interface MetaTaxonomyDto {
   code: string;
-  title: string;
-  depth: number;
-  fullPathName?: string;
+  name: string;
+  status: string;
+  levelConfigs: MetaTaxonomyLevelConfigDto[];
 }
 
-const BASE = '/api/meta/categories/unspsc';
+const CATEGORY_BASE = '/api/meta/categories';
+const TAXONOMY_BASE = '/api/meta/taxonomies';
 
 export const metaCategoryApi = {
-  // Tabs: A-J
-  listUnspscSegments(): Promise<MetaCategoryBrowseNodeDto[]> {
-    return request.get(`${BASE}/segments`);
+  listNodes(params: {
+    taxonomy: string;
+    parentId?: string;
+    level?: number;
+    keyword?: string;
+    status?: string;
+    page?: number;
+    size?: number;
+  }): Promise<PageResponse<MetaCategoryNodeDto>> {
+    return request.get(`${CATEGORY_BASE}/nodes`, { params });
   },
 
-  // Left list: children under selected segment key (A-J)
-  listUnspscFamilies(segmentCodeKey: string): Promise<MetaCategoryBrowseNodeDto[]> {
-    return request.get(`${BASE}/segments/${encodeURIComponent(segmentCodeKey)}/families`);
+  getNodePath(id: string, taxonomy: string): Promise<MetaCategoryNodeDto[]> {
+    return request.get(`${CATEGORY_BASE}/nodes/${encodeURIComponent(id)}/path`, {
+      params: { taxonomy },
+    });
   },
 
-  // Right content: class groups under selected family codeKey
-  listUnspscClassesWithCommodities(familyCodeKey: string): Promise<MetaCategoryClassGroupDto[]> {
-    return request.get(`${BASE}/families/${encodeURIComponent(familyCodeKey)}/classes-with-commodities`);
+  search(params: {
+    taxonomy: string;
+    keyword: string;
+    scopeNodeId?: string;
+    maxDepth?: number;
+    status?: string;
+    page?: number;
+    size?: number;
+  }): Promise<PageResponse<MetaCategorySearchItemDto>> {
+    return request.get(`${CATEGORY_BASE}/search`, { params });
   },
 
-  // Search: optional scope
-  searchUnspsc(params: { q: string; scopeCodeKey?: string; limit?: number }): Promise<MetaCategorySearchHitDto[]> {
-    return request.get(`${BASE}/search`, { params });
+  listChildrenBatch(data: MetaCategoryChildrenBatchRequestDto): Promise<Record<string, MetaCategoryNodeDto[]>> {
+    return request.post(`${CATEGORY_BASE}/nodes:children-batch`, data);
   },
+
+  getTaxonomy(code: string): Promise<MetaTaxonomyDto> {
+    return request.get(`${TAXONOMY_BASE}/${encodeURIComponent(code)}`);
+  }
 };

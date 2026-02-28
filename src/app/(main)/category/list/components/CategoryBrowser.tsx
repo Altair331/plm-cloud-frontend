@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { List, Card, Typography, Space, Button, Tag, Empty, theme, Tabs, Spin } from 'antd';
 import { RightOutlined, LeftOutlined, AppstoreOutlined, ShopOutlined, TagOutlined } from '@ant-design/icons';
 import type { MillerNode } from '../mockData';
-import { metaCategoryApi, type MetaCategoryBrowseNodeDto, type MetaCategoryClassGroupDto } from '../../../../../services/metaCategory';
+import { metaCategoryApi, type MetaCategoryNodeDto } from '../../../../../services/metaCategory';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -10,14 +10,19 @@ interface CategoryBrowserProps {
   onSelect: (node: MillerNode) => void;
 }
 
-const mapBrowseNodeToMillerNode = (dto: MetaCategoryBrowseNodeDto): MillerNode => ({
-  key: dto.key,
+const mapBrowseNodeToMillerNode = (dto: MetaCategoryNodeDto): MillerNode => ({
+  key: dto.id,
   code: dto.code,
-  title: dto.title,
+  title: dto.name,
   hasChildren: dto.hasChildren,
-  depth: dto.depth,
-  fullPathName: dto.fullPathName,
+  depth: dto.level,
+  fullPathName: dto.path || undefined,
 });
+
+interface ClassGroup {
+  clazz: MetaCategoryNodeDto;
+  commodities: MetaCategoryNodeDto[];
+}
 
 const CategoryBrowser: React.FC<CategoryBrowserProps> = ({ onSelect }) => {
   const { token } = theme.useToken();
@@ -35,7 +40,7 @@ const CategoryBrowser: React.FC<CategoryBrowserProps> = ({ onSelect }) => {
   const [activeScope, setActiveScope] = useState<MillerNode | null>(null);
   const [scopeStack, setScopeStack] = useState<MillerNode[]>([]);
 
-  const [classGroups, setClassGroups] = useState<MetaCategoryClassGroupDto[]>([]);
+  const [classGroups, setClassGroups] = useState<ClassGroup[]>([]);
   const [classGroupsLoading, setClassGroupsLoading] = useState(false);
 
   // Selected leaf node for confirmation
@@ -47,9 +52,9 @@ const CategoryBrowser: React.FC<CategoryBrowserProps> = ({ onSelect }) => {
     const run = async () => {
       setGroupsLoading(true);
       try {
-        const resp = await metaCategoryApi.listUnspscSegments();
+        const resp = await metaCategoryApi.listNodes({ taxonomy: 'UNSPSC', level: 1, page: 0, size: 200 });
         if (cancelled) return;
-        const nextGroups = resp.map(mapBrowseNodeToMillerNode);
+        const nextGroups = (resp.content || []).map(mapBrowseNodeToMillerNode);
         setGroups(nextGroups);
         setActiveGroupKey((prev) => prev ?? nextGroups[0]?.key ?? null);
       } finally {
@@ -75,9 +80,14 @@ const CategoryBrowser: React.FC<CategoryBrowserProps> = ({ onSelect }) => {
       setClassGroups([]);
       setSelectedLeaf(null);
       try {
-        const resp = await metaCategoryApi.listUnspscFamilies(activeGroupKey);
+        const resp = await metaCategoryApi.listNodes({
+          taxonomy: 'UNSPSC',
+          parentId: activeGroupKey,
+          page: 0,
+          size: 200,
+        });
         if (cancelled) return;
-        setFamilies(resp.map(mapBrowseNodeToMillerNode));
+        setFamilies((resp.content || []).map(mapBrowseNodeToMillerNode));
       } finally {
         if (!cancelled) setFamiliesLoading(false);
       }
@@ -103,9 +113,31 @@ const CategoryBrowser: React.FC<CategoryBrowserProps> = ({ onSelect }) => {
       setClassGroupsLoading(true);
       setClassGroups([]);
       try {
-        const resp = await metaCategoryApi.listUnspscClassesWithCommodities(activeScope.key);
+        const resp = await metaCategoryApi.listNodes({
+          taxonomy: 'UNSPSC',
+          parentId: activeScope.key,
+          page: 0,
+          size: 200,
+        });
         if (cancelled) return;
-        setClassGroups(resp);
+
+        const children = resp.content || [];
+        const groups = await Promise.all(
+          children.map(async (child) => {
+            if (!child.hasChildren) {
+              return { clazz: child, commodities: [] };
+            }
+            const sub = await metaCategoryApi.listNodes({
+              taxonomy: 'UNSPSC',
+              parentId: child.id,
+              page: 0,
+              size: 200,
+            });
+            return { clazz: child, commodities: sub.content || [] };
+          }),
+        );
+        if (cancelled) return;
+        setClassGroups(groups);
       } finally {
         if (!cancelled) setClassGroupsLoading(false);
       }
@@ -253,7 +285,7 @@ const CategoryBrowser: React.FC<CategoryBrowserProps> = ({ onSelect }) => {
                 const isSelected = selectedLeaf?.key === clazzNode.key;
                 return (
                   <Card
-                    key={group.clazz.key}
+                    key={group.clazz.id}
                     size="small"
                     hoverable
                     onClick={() => handleClickNode(clazzNode)}
@@ -275,8 +307,8 @@ const CategoryBrowser: React.FC<CategoryBrowserProps> = ({ onSelect }) => {
 
               return (
                 <Card
-                  key={group.clazz.key}
-                  title={<Space><AppstoreOutlined />{group.clazz.title}</Space>}
+                  key={group.clazz.id}
+                  title={<Space><AppstoreOutlined />{group.clazz.name}</Space>}
                   size="small"
                   style={{ marginBottom: 16, boxShadow: '0 1px 2px rgba(0,0,0,0.03)' }}
                   headStyle={{ backgroundColor: token.colorBgContainer, borderBottom: `1px solid ${token.colorBorderSecondary}` }}
