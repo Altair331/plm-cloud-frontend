@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Splitter, message } from "antd";
+import { Splitter, message, Modal, Input } from "antd";
 import type { DataNode, TreeProps } from "antd/es/tree";
 import CategoryTree from "../AdminCategoryTree";
 import {
@@ -28,6 +28,24 @@ interface CategoryTreeNode extends Omit<DataNode, "children"> {
   commodityCode?: string;
 }
 
+const getChildLevel = (
+  level?: CategoryTreeNode["level"],
+): CategoryTreeNode["level"] | undefined => {
+  if (level === "segment") return "family";
+  if (level === "family") return "class";
+  if (level === "class") return "commodity";
+  if (level === "commodity") return "item";
+  return undefined;
+};
+
+const getDefaultIconByLevel = (level?: CategoryTreeNode["level"]) => {
+  if (level === "segment") return <AppstoreOutlined />;
+  if (level === "family" || level === "class" || level === "commodity") {
+    return <PartitionOutlined />;
+  }
+  return <TagsOutlined />;
+};
+
 const CategoryManagementPage: React.FC = () => {
   const params = useParams();
   const categoryId = params.id as string;
@@ -40,6 +58,40 @@ const CategoryManagementPage: React.FC = () => {
 
   const [treeData, setTreeData] = useState<CategoryTreeNode[]>([]);
   const [loadedKeys, setLoadedKeys] = useState<React.Key[]>([]);
+
+  const updateNodeInTree = (
+    list: CategoryTreeNode[],
+    key: React.Key,
+    updater: (node: CategoryTreeNode) => CategoryTreeNode,
+  ): CategoryTreeNode[] => {
+    return list.map((node) => {
+      if (node.key === key) {
+        return updater(node);
+      }
+      if (node.children) {
+        return {
+          ...node,
+          children: updateNodeInTree(node.children, key, updater),
+        };
+      }
+      return node;
+    });
+  };
+
+  const removeNodeFromTree = (
+    list: CategoryTreeNode[],
+    key: React.Key,
+  ): CategoryTreeNode[] => {
+    return list
+      .filter((node) => node.key !== key)
+      .map((node) => {
+        if (!node.children) return node;
+        return {
+          ...node,
+          children: removeNodeFromTree(node.children, key),
+        };
+      });
+  };
 
   // Initial Load (Segments)
   useEffect(() => {
@@ -117,7 +169,7 @@ const CategoryManagementPage: React.FC = () => {
             childNodes = currentClassGroup.commodities.map((c) => ({
               title: `${c.code} - ${c.title}`,
               key: c.key,
-              isLeaf: false, // Changed to false to allow loading items
+              isLeaf: false,
               dataRef: c,
               level: "commodity",
               icon: <PartitionOutlined />,
@@ -181,11 +233,145 @@ const CategoryManagementPage: React.FC = () => {
     }
   };
 
-  const handleMenuClick = (key: string, node: any) => {
+  const handleMenuClick = (key: string, node: CategoryTreeNode) => {
     if (key === "design") {
-      // No longer using modal, just select the node
       setSelectedKey(node.key);
       setSelectedNode(node);
+      return;
+    }
+
+    if (key === "add") {
+      const childLevel = getChildLevel(node.level);
+      if (!childLevel) {
+        message.warning("当前节点不支持新增子分类");
+        return;
+      }
+
+      let inputValue = "";
+      Modal.confirm({
+        title: "新增子分类",
+        content: (
+          <Input
+            placeholder="请输入子分类名称"
+            onChange={(e) => {
+              inputValue = e.target.value;
+            }}
+          />
+        ),
+        okText: "确认",
+        cancelText: "取消",
+        onOk: () => {
+          const trimmed = inputValue.trim();
+          if (!trimmed) {
+            message.warning("请输入子分类名称");
+            return Promise.reject();
+          }
+
+          const localCode = `LOCAL_${Date.now()}`;
+          const childNode: CategoryTreeNode = {
+            key: `local_${childLevel}_${Date.now()}`,
+            title: `${localCode} - ${trimmed}`,
+            dataRef: {
+              key: `local_${childLevel}_${Date.now()}`,
+              code: localCode,
+              title: trimmed,
+              hasChildren: childLevel !== "commodity" && childLevel !== "item",
+              depth: (node.dataRef?.depth ?? 0) + 1,
+            },
+            level: childLevel,
+            isLeaf: childLevel === "commodity" || childLevel === "item",
+            icon: getDefaultIconByLevel(childLevel),
+          };
+
+          setTreeData((origin) =>
+            updateNodeInTree(origin, node.key, (targetNode) => ({
+              ...targetNode,
+              isLeaf: false,
+              children: [...(targetNode.children ?? []), childNode],
+            })),
+          );
+
+          setLoadedKeys((keys) =>
+            keys.includes(node.key) ? keys : [...keys, node.key],
+          );
+          message.success("子分类已新增");
+          return Promise.resolve();
+        },
+      });
+      return;
+    }
+
+    if (key === "rename") {
+      let inputValue = node.dataRef?.title ?? "";
+      Modal.confirm({
+        title: "重命名分类",
+        content: (
+          <Input
+            defaultValue={inputValue}
+            placeholder="请输入新的分类名称"
+            onChange={(e) => {
+              inputValue = e.target.value;
+            }}
+          />
+        ),
+        okText: "确认",
+        cancelText: "取消",
+        onOk: () => {
+          const trimmed = inputValue.trim();
+          if (!trimmed) {
+            message.warning("分类名称不能为空");
+            return Promise.reject();
+          }
+
+          setTreeData((origin) =>
+            updateNodeInTree(origin, node.key, (targetNode) => {
+              const code = targetNode.dataRef?.code || "LOCAL";
+              return {
+                ...targetNode,
+                title: `${code} - ${trimmed}`,
+                dataRef: targetNode.dataRef
+                  ? { ...targetNode.dataRef, title: trimmed }
+                  : targetNode.dataRef,
+              };
+            }),
+          );
+
+          if (selectedKey === node.key && selectedNode) {
+            setSelectedNode((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    title: `${prev.dataRef?.code || "LOCAL"} - ${trimmed}`,
+                    dataRef: prev.dataRef
+                      ? { ...prev.dataRef, title: trimmed }
+                      : prev.dataRef,
+                  }
+                : prev,
+            );
+          }
+          message.success("重命名成功");
+          return Promise.resolve();
+        },
+      });
+      return;
+    }
+
+    if (key === "delete") {
+      Modal.confirm({
+        title: "确认删除",
+        content: "删除后不可恢复，是否继续？",
+        okType: "danger",
+        okText: "删除",
+        cancelText: "取消",
+        onOk: () => {
+          setTreeData((origin) => removeNodeFromTree(origin, node.key));
+          if (selectedKey === node.key) {
+            setSelectedKey("");
+            setSelectedNode(undefined);
+          }
+          message.success("分类已删除");
+        },
+      });
     }
   };
 
