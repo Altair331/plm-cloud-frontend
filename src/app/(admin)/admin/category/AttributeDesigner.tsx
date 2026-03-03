@@ -314,6 +314,20 @@ const AttributeDesigner: React.FC<Props> = ({
     }
   };
 
+  const handleDuplicateAttribute = (source: AttributeItem) => {
+    const timestamp = Date.now();
+    const duplicate: AttributeItem = {
+      ...source,
+      id: `new_attr_${timestamp}`,
+      code: `ATTR_${timestamp}`,
+      name: source.name ? `${source.name}_COPY` : "",
+      version: 1,
+      isLatest: true,
+    };
+    setDataSource((prev) => [...prev, duplicate]);
+    setSelectedAttributeId(duplicate.id);
+  };
+
   const handleSingleSave = async (
     attribute: AttributeItem,
     options?: { saveAndNext?: boolean },
@@ -539,6 +553,7 @@ const AttributeDesigner: React.FC<Props> = ({
             searchText={searchText}
             onSearchTextChange={setSearchText}
             onAddAttribute={handleAddAttribute}
+            onDuplicateAttribute={handleDuplicateAttribute}
             onDeleteAttribute={handleDeleteAttribute}
             onBatchRemoveAttributes={handleBatchRemoveAttributes}
           />

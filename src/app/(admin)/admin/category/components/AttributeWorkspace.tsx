@@ -1,5 +1,4 @@
 import React, { useEffect, useState, useMemo, useRef } from "react";
-import { createPortal } from "react-dom";
 import {
   App,
   Empty,
@@ -27,7 +26,6 @@ import {
   Tabs,
   Upload,
   Image,
-  Dropdown,
 } from "antd";
 import type { MenuProps } from "antd";
 import {
@@ -61,6 +59,7 @@ import {
   Theme,
 } from "ag-grid-community";
 import { AttributeItem, EnumOptionItem, AttributeType } from "./types";
+import FloatingContextMenu from "@/components/ContextMenu/FloatingContextMenu";
 
 // Register AG Grid modules
 ModuleRegistry.registerModules([AllCommunityModule]);
@@ -1072,10 +1071,6 @@ const AttributeWorkspace: React.FC<AttributeWorkspaceProps> = ({
         key: "add",
         label: "新增行 (Add Row)",
         icon: <PlusOutlined />,
-        onClick: () => {
-          handleAddRow();
-          setContextMenu((prev) => ({ ...prev, open: false }));
-        },
       },
       {
         type: "divider",
@@ -1086,14 +1081,6 @@ const AttributeWorkspace: React.FC<AttributeWorkspaceProps> = ({
         icon: <DeleteOutlined />,
         danger: true,
         disabled: !contextMenu.record,
-        onClick: () => {
-          if (contextMenu.record) {
-            setEnumOptions(
-              enumOptions.filter((item) => item.id !== contextMenu.record?.id),
-            );
-          }
-          setContextMenu((prev) => ({ ...prev, open: false }));
-        },
       },
     ];
 
@@ -1153,30 +1140,27 @@ const AttributeWorkspace: React.FC<AttributeWorkspaceProps> = ({
 
     return (
       <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
-        {createPortal(
-          <Dropdown
-            key={`${contextMenu.x}-${contextMenu.y}`}
-            menu={{ items: contextMenuItems }}
-            open={contextMenu.open}
-            onOpenChange={(open) => {
-              if (!open) setContextMenu((prev) => ({ ...prev, open: false }));
-            }}
-            trigger={["click"]}
-            destroyOnHidden
-          >
-            <div
-              style={{
-                position: "fixed",
-                left: contextMenu.x,
-                top: contextMenu.y,
-                width: 1,
-                height: 1,
-                pointerEvents: "none",
-              }}
-            />
-          </Dropdown>,
-          document.body,
-        )}
+        <FloatingContextMenu
+          open={contextMenu.open}
+          x={contextMenu.x}
+          y={contextMenu.y}
+          items={contextMenuItems}
+          onMenuClick={({ key, domEvent }) => {
+            domEvent.stopPropagation();
+            if (key === "add") {
+              handleAddRow();
+            }
+            if (key === "delete" && contextMenu.record) {
+              setEnumOptions(
+                enumOptions.filter((item) => item.id !== contextMenu.record?.id),
+              );
+            }
+            setContextMenu((prev) => ({ ...prev, open: false }));
+          }}
+          onClose={() => {
+            setContextMenu((prev) => ({ ...prev, open: false }));
+          }}
+        />
         {/* Toolbar */}
         <Flex
           justify="space-between"

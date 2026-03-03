@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState } from "react";
-import { Dropdown, MenuProps, message } from "antd";
+import { App } from "antd";
+import type { MenuProps } from "antd";
 import type { DataNode, TreeProps } from "antd/es/tree";
 import {
   PlusOutlined,
@@ -10,6 +11,7 @@ import {
 import CategoryTree, {
   CategoryTreeProps,
 } from "@/features/category/CategoryTree";
+import FloatingContextMenu from "@/components/ContextMenu/FloatingContextMenu";
 
 interface AdminCategoryTreeProps extends CategoryTreeProps {
   onMenuClick?: (key: string, node: DataNode) => void;
@@ -19,6 +21,7 @@ const AdminCategoryTree: React.FC<AdminCategoryTreeProps> = ({
   onMenuClick,
   ...props
 }) => {
+  const { message: messageApi } = App.useApp();
   const containerRef = useRef<HTMLDivElement>(null);
 
   const [contextMenuState, setContextMenuState] = useState<{
@@ -46,8 +49,8 @@ const AdminCategoryTree: React.FC<AdminCategoryTreeProps> = ({
     };
   }, []);
 
-  const renderContextMenuInfo = (node: DataNode | null) => {
-    if (!node) return { items: [] };
+  const renderContextMenuItems = (node: DataNode | null): MenuProps["items"] => {
+    if (!node) return [];
     const titleText =
       typeof node.title === "string"
         ? node.title
@@ -72,7 +75,7 @@ const AdminCategoryTree: React.FC<AdminCategoryTreeProps> = ({
       { type: "divider" },
       { key: "delete", label: "删除", icon: <DeleteOutlined />, danger: true },
     ];
-    return { items };
+    return items;
   };
 
   const handleRightClick: TreeProps["onRightClick"] = ({ event, node }) => {
@@ -91,39 +94,26 @@ const AdminCategoryTree: React.FC<AdminCategoryTreeProps> = ({
         {...props}
         onRightClick={handleRightClick}
       />
-      <Dropdown
-        menu={{
-          items: renderContextMenuInfo(contextMenuState.node).items,
-          onClick: ({ key, domEvent }) => {
-            domEvent.stopPropagation();
-            if (onMenuClick && contextMenuState.node) {
-              onMenuClick(key, contextMenuState.node);
-            } else {
-              message.info(
-                `Action: ${key} on Node: ${contextMenuState.node?.key}`,
-              );
-            }
-            setContextMenuState((prev) => ({ ...prev, visible: false }));
-          },
-        }}
+      <FloatingContextMenu
         open={contextMenuState.visible}
-        onOpenChange={(visible) => {
-          if (!visible)
-            setContextMenuState((prev) => ({ ...prev, visible: false }));
+        x={contextMenuState.x}
+        y={contextMenuState.y}
+        items={renderContextMenuItems(contextMenuState.node)}
+        onMenuClick={({ key, domEvent }) => {
+          domEvent.stopPropagation();
+          if (onMenuClick && contextMenuState.node) {
+            onMenuClick(key, contextMenuState.node);
+          } else {
+            messageApi.info(
+              `Action: ${key} on Node: ${contextMenuState.node?.key}`,
+            );
+          }
+          setContextMenuState((prev) => ({ ...prev, visible: false }));
         }}
-        trigger={["contextMenu"]}
-      >
-        <div
-          style={{
-            position: "fixed",
-            left: contextMenuState.x,
-            top: contextMenuState.y,
-            width: 1,
-            height: 1,
-            pointerEvents: "none",
-          }}
-        />
-      </Dropdown>
+        onClose={() => {
+          setContextMenuState((prev) => ({ ...prev, visible: false }));
+        }}
+      />
     </>
   );
 };

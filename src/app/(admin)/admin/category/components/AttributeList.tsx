@@ -29,6 +29,7 @@ import {
   FileDownloadOutlined,
 } from "@mui/icons-material";
 import { AttributeItem, AttributeType } from "./types";
+import FloatingContextMenu from "@/components/ContextMenu/FloatingContextMenu";
 
 interface AttributeListProps {
   dataSource: AttributeItem[];
@@ -38,6 +39,7 @@ interface AttributeListProps {
   searchText: string;
   onSearchTextChange: (text: string) => void;
   onAddAttribute?: () => void;
+  onDuplicateAttribute?: (item: AttributeItem) => void;
   onDeleteAttribute?: (item: AttributeItem) => void;
   onBatchRemoveAttributes?: (ids: string[]) => void;
 }
@@ -100,6 +102,7 @@ const AttributeList: React.FC<AttributeListProps> = ({
   searchText,
   onSearchTextChange,
   onAddAttribute,
+  onDuplicateAttribute,
   onDeleteAttribute,
   onBatchRemoveAttributes,
 }) => {
@@ -123,6 +126,14 @@ const AttributeList: React.FC<AttributeListProps> = ({
   );
 
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
+  const [contextMenuState, setContextMenuState] = useState<{
+    open: boolean;
+    x: number;
+    y: number;
+    target: "row" | "blank";
+    item: AttributeItem | null;
+  }>({ open: false, x: 0, y: 0, target: "blank", item: null });
+  const [contextMenuRowId, setContextMenuRowId] = useState<string | null>(null);
 
   useEffect(() => {
     const idSet = new Set(filteredData.map((item) => item.id));
@@ -151,6 +162,18 @@ const AttributeList: React.FC<AttributeListProps> = ({
     }
   };
 
+  const handleDuplicate = (item: AttributeItem) => {
+    onDuplicateAttribute?.(item);
+  };
+
+  const handleDelete = (item: AttributeItem) => {
+    if (onDeleteAttribute) {
+      onDeleteAttribute(item);
+    } else {
+      setDataSource(dataSource.filter((d) => d.id !== item.id));
+    }
+  };
+
   const getMenuItems = (item: AttributeItem): MenuProps["items"] => [
     {
       key: "duplicate",
@@ -158,6 +181,7 @@ const AttributeList: React.FC<AttributeListProps> = ({
       icon: <CopyOutlined />,
       onClick: (e) => {
         e.domEvent.stopPropagation();
+        handleDuplicate(item);
       },
     },
     {
@@ -170,11 +194,7 @@ const AttributeList: React.FC<AttributeListProps> = ({
       danger: true,
       onClick: (e) => {
         e.domEvent.stopPropagation();
-        if (onDeleteAttribute) {
-          onDeleteAttribute(item);
-        } else {
-          setDataSource(dataSource.filter((d) => d.id !== item.id));
-        }
+        handleDelete(item);
       },
     },
   ];
@@ -269,7 +289,73 @@ const AttributeList: React.FC<AttributeListProps> = ({
       </div>
 
       {/* List Area */}
-      <div style={{ flex: 1, overflowY: "auto" }} ref={listRef}>
+      <div
+        style={{ flex: 1, overflowY: "auto" }}
+        ref={listRef}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          setContextMenuRowId(null);
+          setContextMenuState({
+            open: true,
+            x: e.clientX,
+            y: e.clientY,
+            target: "blank",
+            item: null,
+          });
+        }}
+        onScroll={() => {
+          if (contextMenuState.open) {
+            setContextMenuState((prev) => ({ ...prev, open: false }));
+            setContextMenuRowId(null);
+          }
+        }}
+      >
+        <FloatingContextMenu
+          open={contextMenuState.open}
+          x={contextMenuState.x}
+          y={contextMenuState.y}
+          items={
+            contextMenuState.target === "blank"
+              ? [
+                  {
+                    key: "add",
+                    label: "新增属性",
+                    icon: <AddCircleOutline fontSize="small" />,
+                  },
+                ]
+              : [
+                  {
+                    key: "duplicate",
+                    label: "复制",
+                    icon: <ContentCopy fontSize="small" />,
+                    disabled: !contextMenuState.item,
+                  },
+                  {
+                    key: "delete",
+                    label: "删除",
+                    icon: <DeleteOutline fontSize="small" />,
+                    danger: true,
+                    disabled: !contextMenuState.item,
+                  },
+                ]
+          }
+          onMenuClick={({ key, domEvent }) => {
+            domEvent.stopPropagation();
+            if (key === "add") onAddAttribute?.();
+            if (key === "duplicate" && contextMenuState.item) {
+              handleDuplicate(contextMenuState.item);
+            }
+            if (key === "delete" && contextMenuState.item) {
+              handleDelete(contextMenuState.item);
+            }
+            setContextMenuState((prev) => ({ ...prev, open: false }));
+            setContextMenuRowId(null);
+          }}
+          onClose={() => {
+            setContextMenuState((prev) => ({ ...prev, open: false }));
+            setContextMenuRowId(null);
+          }}
+        />
         <div style={{
           padding: `8px ${HORIZONTAL_PADDING}px`,
           borderBottom: `1px solid ${token.colorBorderSecondary}`,
@@ -320,12 +406,27 @@ const AttributeList: React.FC<AttributeListProps> = ({
                   borderLeft: `${LEFT_INDICATOR_WIDTH}px solid ${isSelected ? token.colorPrimary : "transparent"}`,
                   background: isSelected
                     ? token.controlItemBgActive
-                    : "transparent",
+                    : contextMenuRowId === item.id
+                      ? token.controlItemBgHover
+                      : "transparent",
                   position: "relative",
                   paddingRight: `${ACTION_COL_RESERVED_WIDTH}px`
                 }}
                 className={!isSelected ? "hover:bg-gray-50" : ""} // Keep minimal tailwind for hover if not strict
                 onClick={() => onSelectAttribute(item.id, item)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setSelectedRowKeys([item.id]);
+                  setContextMenuRowId(item.id);
+                  setContextMenuState({
+                    open: true,
+                    x: e.clientX,
+                    y: e.clientY,
+                    target: "row",
+                    item,
+                  });
+                }}
               >
                 <div style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)" }}>
                   <Dropdown
