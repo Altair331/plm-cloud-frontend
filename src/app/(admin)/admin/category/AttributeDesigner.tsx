@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { PlusOutlined } from "@ant-design/icons";
 import {
+  App,
   Button,
   Space,
   Typography,
@@ -9,8 +10,6 @@ import {
   Layout,
   theme,
   Flex,
-  message,
-  Modal,
 } from "antd";
 import AttributeList from "./components/AttributeList";
 import AttributeWorkspace from "./components/AttributeWorkspace";
@@ -65,6 +64,7 @@ const AttributeDesigner: React.FC<Props> = ({
   currentNode,
 }) => {
   const { token } = theme.useToken();
+  const { message: messageApi, modal } = App.useApp();
   const [selectedAttributeId, setSelectedAttributeId] = useState<string | null>(
     null,
   );
@@ -147,7 +147,7 @@ const AttributeDesigner: React.FC<Props> = ({
       }
     } catch (e) {
       console.error(e);
-      message.error("加载属性列表失败");
+      messageApi.error("加载属性列表失败");
     } finally {
       setLoading(false);
     }
@@ -214,7 +214,7 @@ const AttributeDesigner: React.FC<Props> = ({
            }
         } catch(e) {
            console.error('Fetch detail failed', e);
-           message.error("Failed to load attribute details");
+            messageApi.error("Failed to load attribute details");
         }
       } else {
         setCurrentAttribute(null);
@@ -281,7 +281,7 @@ const AttributeDesigner: React.FC<Props> = ({
       return;
     }
 
-    Modal.confirm({
+    modal.confirm({
       title: "当前属性修改尚未保存，是否放弃修改？",
       content: "切换后未保存内容将丢失。",
       okText: "放弃并切换",
@@ -362,10 +362,10 @@ const AttributeDesigner: React.FC<Props> = ({
       try {
           if (isNew) {
               await metaAttributeApi.createAttribute(currentNode.code, dto);
-              message.success("Created successfully");
+              messageApi.success("Created successfully");
           } else {
               await metaAttributeApi.updateAttribute(attribute.code, currentNode.code, dto);
-              message.success("Updated successfully");
+              messageApi.success("Updated successfully");
           }
 
           const remainingUnsavedItems = dataSource.filter(
@@ -400,13 +400,13 @@ const AttributeDesigner: React.FC<Props> = ({
             errorMsg = `保存失败：${errorMsg}`;
           }
           
-          message.error(errorMsg);
+            messageApi.error(errorMsg);
           throw e; // Throw to let Workspace know it failed
       }
   };
 
   const handleDeleteAttribute = (attribute: AttributeItem) => {
-    Modal.confirm({
+    modal.confirm({
       title: "确认删除 (Confirm Delete)",
       content: `确定要删除属性 "${attribute.name}" 吗？此操作不可恢复。`,
       okType: "danger",
@@ -421,7 +421,7 @@ const AttributeDesigner: React.FC<Props> = ({
             setEnumOptions([]);
             setBaselineEnumOptions([]);
           }
-          message.success("已移除 (Removed)");
+          messageApi.success("已移除 (Removed)");
           return;
         }
 
@@ -430,7 +430,7 @@ const AttributeDesigner: React.FC<Props> = ({
 
         try {
           await metaAttributeApi.deleteAttribute(attribute.code, currentNode.code);
-          message.success("删除成功 (Deleted)");
+          messageApi.success("删除成功 (Deleted)");
           // Refresh list
           loadAttributes(
             currentNode.code,
@@ -439,7 +439,7 @@ const AttributeDesigner: React.FC<Props> = ({
           );
         } catch (e) {
           console.error(e);
-          message.error("删除失败 (Delete Failed)");
+          messageApi.error("删除失败 (Delete Failed)");
         }
       },
     });
@@ -458,11 +458,11 @@ const AttributeDesigner: React.FC<Props> = ({
         setEnumOptions([]);
         setBaselineEnumOptions([]);
       }
-      message.success(`已批量移除 ${unsavedIds.length} 条未保存新属性`);
+      messageApi.success(`已批量移除 ${unsavedIds.length} 条未保存新属性`);
     }
 
     if (persistedCount > 0) {
-      message.warning("批量移除仅支持未保存的新属性，已存在属性请单条删除");
+      messageApi.warning("批量移除仅支持未保存的新属性，已存在属性请单条删除");
     }
   };
 
@@ -475,7 +475,7 @@ const AttributeDesigner: React.FC<Props> = ({
 
   const handleSaveAll = () => {
     // Optional: Bulk save implementation if backend supports it, otherwise warn user
-    message.info("Please save each attribute individually in the workspace.");
+    messageApi.info("Please save each attribute individually in the workspace.");
   };
 
   // Modal Title
@@ -538,6 +538,7 @@ const AttributeDesigner: React.FC<Props> = ({
             onSelectAttribute={(id) => trySwitchSelection(id)}
             searchText={searchText}
             onSearchTextChange={setSearchText}
+            onAddAttribute={handleAddAttribute}
             onDeleteAttribute={handleDeleteAttribute}
             onBatchRemoveAttributes={handleBatchRemoveAttributes}
           />

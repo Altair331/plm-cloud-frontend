@@ -25,8 +25,8 @@ import {
   AddCircleOutline,
   DeleteOutline,
   ContentCopy,
-  FileUpload,
-  FileDownload,
+  FileUploadOutlined,
+  FileDownloadOutlined,
 } from "@mui/icons-material";
 import { AttributeItem, AttributeType } from "./types";
 
@@ -37,6 +37,7 @@ interface AttributeListProps {
   onSelectAttribute: (id: string, item: AttributeItem) => void;
   searchText: string;
   onSearchTextChange: (text: string) => void;
+  onAddAttribute?: () => void;
   onDeleteAttribute?: (item: AttributeItem) => void;
   onBatchRemoveAttributes?: (ids: string[]) => void;
 }
@@ -98,6 +99,7 @@ const AttributeList: React.FC<AttributeListProps> = ({
   onSelectAttribute,
   searchText,
   onSearchTextChange,
+  onAddAttribute,
   onDeleteAttribute,
   onBatchRemoveAttributes,
 }) => {
@@ -177,6 +179,18 @@ const AttributeList: React.FC<AttributeListProps> = ({
     },
   ];
 
+  const handleToolbarBatchDelete = () => {
+    const ids = selectedRowKeys.map((key) => String(key));
+    if (ids.length === 0) return;
+
+    if (onBatchRemoveAttributes) {
+      onBatchRemoveAttributes(ids);
+    } else {
+      setDataSource(dataSource.filter((d) => !ids.includes(d.id)));
+    }
+    setSelectedRowKeys([]);
+  };
+
   return (
     <div
       style={{
@@ -186,54 +200,72 @@ const AttributeList: React.FC<AttributeListProps> = ({
         background: token.colorBgContainer,
       }}
     >
-      {/* Search Bar */}
-      <div style={{ padding: "12px 16px", borderBottom: `1px solid ${token.colorBorderSecondary}` }}>
+      {/* Toolbar */}
+      <div
+        style={{
+          height: 46,
+          padding: "0 16px",
+          borderBottom: `1px solid ${token.colorBorderSecondary}`,
+          display: "flex",
+          alignItems: "center",
+        }}
+      >
         <div
           style={{
             display: "flex",
             alignItems: "center",
-            gap: 8,
-            marginBottom: 10,
+            justifyContent: "space-between",
+            gap: 12,
+            width: "100%",
           }}
         >
-          <Button
-            type="text"
-            size="small"
-            icon={<AddCircleOutline fontSize="small" />}
-            style={{ color: token.colorPrimary }}
-          />
-          <Button
-            type="text"
-            size="small"
-            icon={<DeleteOutline fontSize="small" />}
-            style={{ color: token.colorPrimary }}
-          />
-          <Button
-            type="text"
-            size="small"
-            icon={<ContentCopy fontSize="small" />}
-            style={{ color: token.colorPrimary }}
-          />
-          <Button
-            type="text"
-            size="small"
-            icon={<FileUpload fontSize="small" />}
-            style={{ color: token.colorPrimary }}
-          />
-          <Button
-            type="text"
-            size="small"
-            icon={<FileDownload fontSize="small" />}
-            style={{ color: token.colorPrimary }}
-          />
+          <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+            <Button
+              type="text"
+              size="small"
+              icon={<AddCircleOutline fontSize="small" />}
+              style={{ color: token.colorPrimary }}
+              onClick={() => onAddAttribute?.()}
+            />
+            <Button
+              type="text"
+              size="small"
+              icon={<DeleteOutline fontSize="small" />}
+              style={{ color: token.colorPrimary }}
+              disabled={selectedRowKeys.length === 0}
+              onClick={handleToolbarBatchDelete}
+            />
+            <Button
+              type="text"
+              size="small"
+              icon={<ContentCopy fontSize="small" />}
+              style={{ color: token.colorPrimary }}
+            />
+            <Button
+              type="text"
+              size="small"
+              icon={<FileUploadOutlined fontSize="small" />}
+              style={{ color: token.colorPrimary }}
+            />
+            <Button
+              type="text"
+              size="small"
+              icon={<FileDownloadOutlined fontSize="small" />}
+              style={{ color: token.colorPrimary }}
+            />
+          </div>
+
+          <div style={{ flex: 1, minWidth: 180, maxWidth: 320 }}>
+            <Input
+              placeholder="筛选属性 . . ."
+              prefix={<SearchOutlined style={{ color: token.colorTextQuaternary }} />}
+              value={searchText}
+              onChange={(e) => onSearchTextChange(e.target.value)}
+              allowClear
+              size="small"
+            />
+          </div>
         </div>
-        <Input
-          placeholder="筛选属性 . . ."
-          prefix={<SearchOutlined style={{ color: token.colorTextQuaternary }} />}
-          value={searchText}
-          onChange={(e) => onSearchTextChange(e.target.value)}
-          allowClear
-        />
       </div>
 
       {/* List Area */}

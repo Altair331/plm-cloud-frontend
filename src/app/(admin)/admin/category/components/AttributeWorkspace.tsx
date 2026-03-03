@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import {
+  App,
   Empty,
   Typography,
   Form,
@@ -24,7 +25,6 @@ import {
   Col,
   Collapse,
   Tabs,
-  Modal,
   Upload,
   Image,
   Dropdown,
@@ -95,6 +95,7 @@ const AttributeWorkspace: React.FC<AttributeWorkspaceProps> = ({
   hasUnsavedChanges,
 }) => {
   const { token } = theme.useToken();
+  const { modal } = App.useApp();
   const [form] = Form.useForm();
   const [isEditing, setIsEditing] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "loading" | "success">("idle");
@@ -397,7 +398,7 @@ const AttributeWorkspace: React.FC<AttributeWorkspaceProps> = ({
       attribute?.id.startsWith("new_attr_") &&
       onDiscard
     ) {
-      Modal.confirm({
+      modal.confirm({
         title: "放弃新建? (Discard New Attribute?)",
         content:
           "这是一个未保存的新属性，取消将直接删除该属性。是否确认放弃？(This is an unsaved new attribute. Canceling will delete it. Are you sure?)",
@@ -430,7 +431,7 @@ const AttributeWorkspace: React.FC<AttributeWorkspaceProps> = ({
         padding: "8px 16px",
         borderBottom: `1px solid ${token.colorBorderSecondary}`,
         background: token.colorBgContainer,
-        height: 48,
+        height: 44,
       }}
     >
       <Space size={12}>
