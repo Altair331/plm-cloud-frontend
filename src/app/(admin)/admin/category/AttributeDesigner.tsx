@@ -1,11 +1,5 @@
-import React, { useState, useEffect } from "react";
-import {
-  SaveOutlined,
-  HistoryOutlined,
-  EyeOutlined,
-  PlusOutlined,
-  SearchOutlined,
-} from "@ant-design/icons";
+import React, { useState, useEffect, useMemo } from "react";
+import { PlusOutlined } from "@ant-design/icons";
 import {
   Button,
   Space,
@@ -15,7 +9,6 @@ import {
   Layout,
   theme,
   Flex,
-  Input,
   message,
   Modal,
 } from "antd";
@@ -26,7 +19,43 @@ import { metaAttributeApi } from "@/services/metaAttribute";
 import { MetaAttributeUpsertRequestDto, MetaAttributeDefListItemDto, MetaAttributeDefDetailDto } from "@/models/metaAttribute";
 import dayjs from "dayjs";
 
-const { Header, Sider, Content } = Layout;
+const isNewAttributeId = (id?: string | null) => !!id && id.startsWith("new_attr_");
+
+const normalizeAttributeForCompare = (attribute: AttributeItem | null) => {
+  if (!attribute) return null;
+  return {
+    id: attribute.id,
+    code: attribute.code,
+    name: attribute.name,
+    attributeField: attribute.attributeField || "",
+    type: attribute.type,
+    unit: attribute.unit || "",
+    required: !!attribute.required,
+    unique: !!attribute.unique,
+    hidden: !!attribute.hidden,
+    readonly: !!attribute.readonly,
+    searchable: !!attribute.searchable,
+    description: attribute.description || "",
+    defaultValue: attribute.defaultValue ?? null,
+    min: attribute.min ?? null,
+    max: attribute.max ?? null,
+    step: attribute.step ?? null,
+    precision: attribute.precision ?? null,
+    trueLabel: attribute.trueLabel || "",
+    falseLabel: attribute.falseLabel || "",
+    renderType: attribute.renderType || "text",
+    constraintMode: attribute.constraintMode || "none",
+  };
+};
+
+const normalizeEnumOptionsForCompare = (options: EnumOptionItem[]) =>
+  options.map((item) => ({
+    code: item.code || "",
+    value: item.value || "",
+    label: item.label || "",
+    image: item.image || "",
+    order: item.order ?? 0,
+  }));
 
 interface Props {
   currentNode?: { title?: string; code?: string; [key: string]: any };
@@ -46,6 +75,10 @@ const AttributeDesigner: React.FC<Props> = ({
 
   const [currentAttribute, setCurrentAttribute] =
     useState<AttributeItem | null>(null);
+  const [baselineAttribute, setBaselineAttribute] =
+    useState<AttributeItem | null>(null);
+  const [enumOptions, setEnumOptions] = useState<EnumOptionItem[]>([]);
+  const [baselineEnumOptions, setBaselineEnumOptions] = useState<EnumOptionItem[]>([]);
 
   // Helper: Map Backend DTO List Item to Frontend AttributeItem
   const mapListItemToAttributeItem = (dto: MetaAttributeDefListItemDto): AttributeItem => ({
@@ -96,13 +129,18 @@ const AttributeDesigner: React.FC<Props> = ({
     falseLabel: dto.latestVersion.falseLabel,
   });
 
-  const loadAttributes = async (categoryCode: string, selectAttributeId?: string) => {
+  const loadAttributes = async (
+    categoryCode: string,
+    selectAttributeId?: string,
+    localUnsavedItems: AttributeItem[] = [],
+  ) => {
     setLoading(true);
     try {
       const res = await metaAttributeApi.listAttributes({ 
         categoryCode, page: 0, size: 100 
       });
-      setDataSource(res.content.map(mapListItemToAttributeItem));
+      const merged = [...res.content.map(mapListItemToAttributeItem), ...localUnsavedItems];
+      setDataSource(merged);
       
       if (selectAttributeId) {
         setSelectedAttributeId(selectAttributeId);
@@ -117,13 +155,21 @@ const AttributeDesigner: React.FC<Props> = ({
 
   useEffect(() => {
     if (currentNode?.code) {
-      loadAttributes(currentNode.code);
+      loadAttributes(currentNode.code, undefined, []);
       setSelectedAttributeId(null);
       setCurrentAttribute(null);
+      setBaselineAttribute(null);
+      setEnumOptions([]);
+      setBaselineEnumOptions([]);
+      setHasUnsavedChanges(false);
     } else {
       setDataSource([]);
       setSelectedAttributeId(null);
       setCurrentAttribute(null);
+      setBaselineAttribute(null);
+      setEnumOptions([]);
+      setBaselineEnumOptions([]);
+      setHasUnsavedChanges(false);
     }
   }, [currentNode]);
 
@@ -135,9 +181,11 @@ const AttributeDesigner: React.FC<Props> = ({
         if (selectedAttributeId.startsWith('new_attr_')) {
              const localItem = dataSource.find(i => i.id === selectedAttributeId);
              if (localItem) {
-                setCurrentAttribute({ ...localItem });
-                // Clear enum options for new attributes
+               const snapshot = { ...localItem };
+               setCurrentAttribute(snapshot);
+               setBaselineAttribute(snapshot);
                 setEnumOptions([]);
+               setBaselineEnumOptions([]);
              }
              return;
         }
@@ -145,36 +193,38 @@ const AttributeDesigner: React.FC<Props> = ({
         try {
            console.log(`Fetching detail for ${selectedAttributeId}`);
            const detail = await metaAttributeApi.getAttributeDetail(selectedAttributeId, true); // includeValues=true
-           console.log('Detail fetched:', detail);
            const mapped = mapDetailToAttributeItem(detail);
            setCurrentAttribute(mapped);
+           setBaselineAttribute(mapped);
            
            // Load enum options if present
            if (detail.lovValues && detail.lovValues.length > 0) {
-             setEnumOptions(detail.lovValues.map((v: any, index: number) => ({
+             const mappedOptions = detail.lovValues.map((v: any, index: number) => ({
                id: `enum_${index}`,
                code: v.code,
                value: v.value, // Backend detail DTO uses `value`
                label: v.label || '',
                order: index
-             })));
+             }));
+             setEnumOptions(mappedOptions);
+             setBaselineEnumOptions(mappedOptions);
            } else {
              setEnumOptions([]);
+             setBaselineEnumOptions([]);
            }
-
-           // Also update the list item with latest details just in case
-           setDataSource(prev => prev.map(p => p.id === selectedAttributeId ? mapped : p));
         } catch(e) {
            console.error('Fetch detail failed', e);
            message.error("Failed to load attribute details");
         }
       } else {
         setCurrentAttribute(null);
+        setBaselineAttribute(null);
         setEnumOptions([]);
+        setBaselineEnumOptions([]);
       }
     };
     fetchDetail();
-  }, [selectedAttributeId]);
+  }, [selectedAttributeId, dataSource]);
 
   // Sync selection state when dataSource changes (e.g. deletion)
   useEffect(() => {
@@ -183,40 +233,101 @@ const AttributeDesigner: React.FC<Props> = ({
     }
   }, [dataSource, selectedAttributeId]);
 
+  const computedDirty = useMemo(() => {
+    if (!currentAttribute || !baselineAttribute) return false;
+    const attrDirty =
+      JSON.stringify(normalizeAttributeForCompare(currentAttribute)) !==
+      JSON.stringify(normalizeAttributeForCompare(baselineAttribute));
+
+    const enumDirty =
+      JSON.stringify(normalizeEnumOptionsForCompare(enumOptions)) !==
+      JSON.stringify(normalizeEnumOptionsForCompare(baselineEnumOptions));
+
+    return attrDirty || enumDirty;
+  }, [currentAttribute, baselineAttribute, enumOptions, baselineEnumOptions]);
+
+  useEffect(() => {
+    setHasUnsavedChanges(computedDirty);
+  }, [computedDirty]);
+
+  useEffect(() => {
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!hasUnsavedChanges) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, [hasUnsavedChanges]);
+
   const handleAttributeUpdate = (key: string, value: any) => {
     if (!currentAttribute) return;
-
-    setHasUnsavedChanges(true); // Can also be local dirty state
     const updated = { ...currentAttribute, [key]: value };
     setCurrentAttribute(updated);
-
-    // Update list view optimistically
-    setDataSource((prev) =>
-      prev.map((item) => (item.id === currentAttribute.id ? updated : item)),
-    );
   };
 
-  const [enumOptions, setEnumOptions] = useState<EnumOptionItem[]>([]);
+  const applySelection = (targetId: string) => {
+    setSelectedAttributeId(targetId);
+  };
+
+  const trySwitchSelection = (targetId: string) => {
+    if (selectedAttributeId === targetId) return;
+
+    if (!hasUnsavedChanges) {
+      applySelection(targetId);
+      return;
+    }
+
+    Modal.confirm({
+      title: "当前属性修改尚未保存，是否放弃修改？",
+      content: "切换后未保存内容将丢失。",
+      okText: "放弃并切换",
+      cancelText: "继续编辑",
+      okType: "danger",
+      onOk: () => {
+        if (baselineAttribute) {
+          setCurrentAttribute({ ...baselineAttribute });
+          setEnumOptions([...baselineEnumOptions]);
+        }
+        setHasUnsavedChanges(false);
+        applySelection(targetId);
+      },
+    });
+  };
 
   const handleAddAttribute = () => {
     const timestamp = Date.now();
     const newAttr: AttributeItem = {
       id: `new_attr_${timestamp}`,
       code: `ATTR_${timestamp}`, 
-      name: "New Attribute",
+      name: "",
       type: "enum",
       version: 1,
       isLatest: true,
     };
-    setDataSource([...dataSource, newAttr]);
-    setSelectedAttributeId(newAttr.id);
-    setHasUnsavedChanges(true);
+    setDataSource((prev) => [...prev, newAttr]);
+    if (!selectedAttributeId || !isNewAttributeId(selectedAttributeId)) {
+      setSelectedAttributeId(newAttr.id);
+    }
   };
 
-  const handleSingleSave = async (attribute: AttributeItem) => {
+  const handleSingleSave = async (
+    attribute: AttributeItem,
+    options?: { saveAndNext?: boolean },
+  ) => {
       if (!currentNode?.code) return;
       
       const isNew = attribute.id.startsWith("new_attr_");
+      const unsavedNewItems = dataSource.filter((item) => isNewAttributeId(item.id));
+      const currentNewIndex = unsavedNewItems.findIndex((item) => item.id === attribute.id);
+      const nextUnsavedNewId =
+        options?.saveAndNext && currentNewIndex > -1 && currentNewIndex < unsavedNewItems.length - 1
+          ? unsavedNewItems[currentNewIndex + 1].id
+          : undefined;
+
       // Use the modified code if not new, or the new code
       const dto: MetaAttributeUpsertRequestDto = {
           key: attribute.code,
@@ -256,8 +367,24 @@ const AttributeDesigner: React.FC<Props> = ({
               await metaAttributeApi.updateAttribute(attribute.code, currentNode.code, dto);
               message.success("Updated successfully");
           }
-          // Reload to get latest state/version and keep the saved attribute selected
-          loadAttributes(currentNode.code, attribute.code);
+
+          const remainingUnsavedItems = dataSource.filter(
+            (item) => !isNewAttributeId(item.id) || item.id !== attribute.id,
+          );
+
+          const targetId = nextUnsavedNewId || attribute.code;
+          await loadAttributes(currentNode.code, targetId, remainingUnsavedItems.filter((item) => isNewAttributeId(item.id)));
+
+          if (nextUnsavedNewId) {
+            setSelectedAttributeId(nextUnsavedNewId);
+          }
+
+          if (isNew) {
+            setDataSource((prev) => prev.filter((item) => item.id !== attribute.id));
+          }
+
+          setBaselineAttribute(null);
+          setBaselineEnumOptions([]);
           setHasUnsavedChanges(false);
       } catch (e: any) {
           console.error("Save error:", e);
@@ -287,6 +414,13 @@ const AttributeDesigner: React.FC<Props> = ({
         // If it's a new unsaved attribute, just remove from list
         if (attribute.id.startsWith("new_attr_")) {
           setDataSource((prev) => prev.filter((item) => item.id !== attribute.id));
+          if (selectedAttributeId === attribute.id) {
+            setSelectedAttributeId(null);
+            setCurrentAttribute(null);
+            setBaselineAttribute(null);
+            setEnumOptions([]);
+            setBaselineEnumOptions([]);
+          }
           message.success("已移除 (Removed)");
           return;
         }
@@ -298,7 +432,11 @@ const AttributeDesigner: React.FC<Props> = ({
           await metaAttributeApi.deleteAttribute(attribute.code, currentNode.code);
           message.success("删除成功 (Deleted)");
           // Refresh list
-          loadAttributes(currentNode.code);
+          loadAttributes(
+            currentNode.code,
+            undefined,
+            dataSource.filter((item) => isNewAttributeId(item.id)),
+          );
         } catch (e) {
           console.error(e);
           message.error("删除失败 (Delete Failed)");
@@ -306,6 +444,34 @@ const AttributeDesigner: React.FC<Props> = ({
       },
     });
   };
+
+  const handleBatchRemoveAttributes = (ids: string[]) => {
+    const unsavedIds = ids.filter((id) => isNewAttributeId(id));
+    const persistedCount = ids.length - unsavedIds.length;
+
+    if (unsavedIds.length > 0) {
+      setDataSource((prev) => prev.filter((item) => !unsavedIds.includes(item.id)));
+      if (selectedAttributeId && unsavedIds.includes(selectedAttributeId)) {
+        setSelectedAttributeId(null);
+        setCurrentAttribute(null);
+        setBaselineAttribute(null);
+        setEnumOptions([]);
+        setBaselineEnumOptions([]);
+      }
+      message.success(`已批量移除 ${unsavedIds.length} 条未保存新属性`);
+    }
+
+    if (persistedCount > 0) {
+      message.warning("批量移除仅支持未保存的新属性，已存在属性请单条删除");
+    }
+  };
+
+  const hasNextUnsavedNew = useMemo(() => {
+    if (!selectedAttributeId || !isNewAttributeId(selectedAttributeId)) return false;
+    const unsavedNewIds = dataSource.filter((item) => isNewAttributeId(item.id)).map((item) => item.id);
+    const index = unsavedNewIds.findIndex((id) => id === selectedAttributeId);
+    return index > -1 && index < unsavedNewIds.length - 1;
+  }, [dataSource, selectedAttributeId]);
 
   const handleSaveAll = () => {
     // Optional: Bulk save implementation if backend supports it, otherwise warn user
@@ -342,11 +508,6 @@ const AttributeDesigner: React.FC<Props> = ({
         <Typography.Title level={5} style={{ margin: 0, marginRight: 16 }}>
           {currentNode?.title || "未知对象 (Unknown Item)"}
         </Typography.Title>
-        {hasUnsavedChanges && (
-           <Tag color="warning" variant="filled" style={{ marginRight: 16 }}>
-              未保存 (Unsaved Changes)
-           </Tag>
-        )}
         <Button
           type="primary"
           icon={<PlusOutlined />}
@@ -369,15 +530,16 @@ const AttributeDesigner: React.FC<Props> = ({
       {renderToolbar()}
 
       <Splitter style={{ flex: 1, minHeight: 0 }}>
-        <Splitter.Panel defaultSize={500} min={350} max={650} collapsible>
+        <Splitter.Panel defaultSize={450} min={350} max={550} collapsible>
           <AttributeList
             dataSource={dataSource}
             setDataSource={setDataSource}
             selectedAttributeId={selectedAttributeId}
-            onSelectAttribute={(id) => setSelectedAttributeId(id)}
+            onSelectAttribute={(id) => trySwitchSelection(id)}
             searchText={searchText}
             onSearchTextChange={setSearchText}
             onDeleteAttribute={handleDeleteAttribute}
+            onBatchRemoveAttributes={handleBatchRemoveAttributes}
           />
         </Splitter.Panel>
         <Splitter.Panel>
@@ -386,12 +548,27 @@ const AttributeDesigner: React.FC<Props> = ({
             onUpdate={handleAttributeUpdate}
             enumOptions={enumOptions}
             setEnumOptions={setEnumOptions}
-            onSave={handleSingleSave}
+            onSave={(attribute) => handleSingleSave(attribute, { saveAndNext: false })}
+            onSaveAndNext={(attribute) => handleSingleSave(attribute, { saveAndNext: true })}
+            showSaveAndNext={hasNextUnsavedNew}
+            hasUnsavedChanges={hasUnsavedChanges}
             onDiscard={(id) => {
               setDataSource((prev) => prev.filter((item) => item.id !== id));
               if (selectedAttributeId === id) {
                 setSelectedAttributeId(null);
               }
+              setCurrentAttribute(null);
+              setBaselineAttribute(null);
+              setEnumOptions([]);
+              setBaselineEnumOptions([]);
+              setHasUnsavedChanges(false);
+            }}
+            onCancelEdit={() => {
+              if (baselineAttribute) {
+                setCurrentAttribute({ ...baselineAttribute });
+                setEnumOptions([...baselineEnumOptions]);
+              }
+              setHasUnsavedChanges(false);
             }}
           />
         </Splitter.Panel>

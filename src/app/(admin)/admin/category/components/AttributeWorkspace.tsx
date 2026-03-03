@@ -72,6 +72,10 @@ interface AttributeWorkspaceProps {
   setEnumOptions: (data: EnumOptionItem[]) => void;
   onDiscard?: (id: string) => void;
   onSave?: (attribute: AttributeItem) => Promise<void>;
+  onSaveAndNext?: (attribute: AttributeItem) => Promise<void>;
+  showSaveAndNext?: boolean;
+  onCancelEdit?: () => void;
+  hasUnsavedChanges?: boolean;
 }
 
 const { Option } = Select;
@@ -85,6 +89,10 @@ const AttributeWorkspace: React.FC<AttributeWorkspaceProps> = ({
   setEnumOptions,
   onDiscard,
   onSave,
+  onSaveAndNext,
+  showSaveAndNext,
+  onCancelEdit,
+  hasUnsavedChanges,
 }) => {
   const { token } = theme.useToken();
   const [form] = Form.useForm();
@@ -345,15 +353,19 @@ const AttributeWorkspace: React.FC<AttributeWorkspaceProps> = ({
     });
   };
 
-  const handleSave = () => {
+  const handleSave = (saveAndNext: boolean = false) => {
     form
       .validateFields()
       .then(async () => {
-        if (onSave && attribute) {
+        if (attribute && ((saveAndNext && onSaveAndNext) || (!saveAndNext && onSave))) {
           setSaveStatus("loading");
           try {
-             await onSave(attribute);
-             setIsEditing(false);
+             if (saveAndNext && onSaveAndNext) {
+               await onSaveAndNext(attribute);
+             } else if (onSave) {
+               await onSave(attribute);
+               setIsEditing(false);
+             }
              setSaveStatus("success");
              setTimeout(() => setSaveStatus("idle"), 2000);
           } catch (e: any) {
@@ -397,6 +409,7 @@ const AttributeWorkspace: React.FC<AttributeWorkspaceProps> = ({
         },
       });
     } else {
+      onCancelEdit?.();
       setIsEditing(false);
     }
   };
@@ -424,6 +437,11 @@ const AttributeWorkspace: React.FC<AttributeWorkspaceProps> = ({
         <Title level={5} style={{ margin: 0 }}>
           {attribute.name}
         </Title>
+        {hasUnsavedChanges && (
+          <Tag color="warning" variant="filled" style={{ marginInlineEnd: 0 }}>
+            未保存
+          </Tag>
+        )}
         <Tag color="cyan">V{attribute.version}.0</Tag>
         <Text type="secondary" copyable style={{ fontSize: 12 }}>
           {attribute.attributeField || attribute.code}
@@ -452,10 +470,18 @@ const AttributeWorkspace: React.FC<AttributeWorkspaceProps> = ({
               type="primary"
               size="small"
               icon={<SaveOutlined />}
-              onClick={handleSave}
+              onClick={() => handleSave(false)}
             >
               保存
             </Button>
+            {showSaveAndNext && (
+              <Button
+                size="small"
+                onClick={() => handleSave(true)}
+              >
+                保存并转至下一条
+              </Button>
+            )}
           </>
         )}
       </Space>
@@ -588,9 +614,9 @@ const AttributeWorkspace: React.FC<AttributeWorkspaceProps> = ({
               <div style={{ padding: 12 }}>
                 <div
                   style={{
-                    background: token.colorFillQuaternary,
-                    borderRadius: 8,
-                    padding: 8,
+                    background: "transparent",
+                    borderRadius: 0,
+                    padding: 0,
                   }}
                 >
                   <Title
@@ -604,8 +630,8 @@ const AttributeWorkspace: React.FC<AttributeWorkspaceProps> = ({
                   >
                     属性详情 (Attribute Details)
                   </Title>
-                  <Row gutter={24}>
-                    <Col span={4}>
+                  <Row gutter={[16, 0]}>
+                    <Col xs={24} sm={12} md={12} lg={12} xl={6}>
                       <Form.Item
                         label="名称 (Display Name)"
                         name="name"
@@ -614,7 +640,7 @@ const AttributeWorkspace: React.FC<AttributeWorkspaceProps> = ({
                         <Input size="middle" />
                       </Form.Item>
                     </Col>
-                    <Col span={4}>
+                    <Col xs={24} sm={12} md={12} lg={12} xl={6}>
                       <Form.Item
                         label="属性字段 (Attribute Field)"
                         name="attributeField"
@@ -622,7 +648,7 @@ const AttributeWorkspace: React.FC<AttributeWorkspaceProps> = ({
                         <Input size="middle" />
                       </Form.Item>
                     </Col>
-                    <Col span={4}>
+                    <Col xs={24} sm={12} md={12} lg={12} xl={6}>
                       <Form.Item
                         label="编码 (Code)"
                         name="code"
@@ -631,16 +657,7 @@ const AttributeWorkspace: React.FC<AttributeWorkspaceProps> = ({
                         <Input disabled={!attribute.isLatest} size="middle" />
                       </Form.Item>
                     </Col>
-                    <Col span={4}>
-                      <Form.Item
-                        label="描述 (Description)"
-                        name="description"
-                        style={{ marginBottom: 0 }}
-                      >
-                        <Input size="middle" />
-                      </Form.Item>
-                    </Col>
-                    <Col span={4}>
+                    <Col xs={24} sm={12} md={12} lg={12} xl={6}>
                       <Form.Item label="数据类型 (Data Type)" name="type">
                         <Select size="middle">
                           <Option value="number">Number</Option>
@@ -650,12 +667,23 @@ const AttributeWorkspace: React.FC<AttributeWorkspaceProps> = ({
                         </Select>
                       </Form.Item>
                     </Col>
-                    <Col span={4}>
+                  </Row>
+
+                  <Row gutter={[16, 0]}>
+                    <Col xs={24} sm={24} md={24} lg={12} xl={10}>
+                      <Form.Item
+                        label="描述 (Description)"
+                        name="description"
+                      >
+                        <Input size="middle" />
+                      </Form.Item>
+                    </Col>
+                    <Col xs={24} sm={12} md={12} lg={6} xl={7}>
                       <Form.Item label="单位 (Unit)" name="unit">
                         <Input size="middle" />
                       </Form.Item>
                     </Col>
-                    <Col span={4}>
+                    <Col xs={24} sm={12} md={12} lg={6} xl={7}>
                       <Form.Item
                         label="默认值 (Default Value)"
                         name="defaultValue"
@@ -706,50 +734,6 @@ const AttributeWorkspace: React.FC<AttributeWorkspaceProps> = ({
                     </Col>
                   </Row>
 
-                  <Divider />
-
-                  <Row gutter={24}>
-                    <Col span={6}>
-                      <Form.Item label="创建人 (Created By)">
-                        <Input
-                          disabled
-                          value={attribute.createdBy || "Admin"}
-                          variant="borderless"
-                          size="middle"
-                        />
-                      </Form.Item>
-                    </Col>
-                    <Col span={6}>
-                      <Form.Item label="创建时间 (Created At)">
-                        <Input
-                          disabled
-                          value={attribute.createdAt || "2023-01-01 12:00"}
-                          variant="borderless"
-                          size="middle"
-                        />
-                      </Form.Item>
-                    </Col>
-                    <Col span={6}>
-                      <Form.Item label="修改人 (Modified By)">
-                        <Input
-                          disabled
-                          value={attribute.modifiedBy || "Admin"}
-                          variant="borderless"
-                          size="middle"
-                        />
-                      </Form.Item>
-                    </Col>
-                    <Col span={6}>
-                      <Form.Item label="修改时间 (Modified At)">
-                        <Input
-                          disabled
-                          value={attribute.modifiedAt || "2023-10-24 14:30"}
-                          variant="borderless"
-                          size="middle"
-                        />
-                      </Form.Item>
-                    </Col>
-                  </Row>
                 </div>
               </div>
             ),

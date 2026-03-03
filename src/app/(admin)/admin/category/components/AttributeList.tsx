@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import {
   SearchOutlined,
-  PlusOutlined,
   MoreOutlined,
   NumberOutlined,
   FontColorsOutlined,
@@ -19,10 +18,16 @@ import {
   MenuProps,
   Typography,
   theme,
-  Flex,
-  Tooltip,
+  Tag,
   Checkbox,
 } from "antd";
+import {
+  AddCircleOutline,
+  DeleteOutline,
+  ContentCopy,
+  FileUpload,
+  FileDownload,
+} from "@mui/icons-material";
 import { AttributeItem, AttributeType } from "./types";
 
 interface AttributeListProps {
@@ -33,6 +38,7 @@ interface AttributeListProps {
   searchText: string;
   onSearchTextChange: (text: string) => void;
   onDeleteAttribute?: (item: AttributeItem) => void;
+  onBatchRemoveAttributes?: (ids: string[]) => void;
 }
 
 const { Text } = Typography;
@@ -75,6 +81,16 @@ const getTypeLabel = (type: AttributeType) => {
   }
 };
 
+const LEFT_INDICATOR_WIDTH = 4;
+const CHECKBOX_COL_WIDTH = 32;
+const INDEX_COL_WIDTH = 30;
+const TYPE_COL_WIDTH = 100;
+const STATUS_COL_WIDTH = 44;
+const HORIZONTAL_PADDING = 16;
+const ACTION_COL_RESERVED_WIDTH = 40;
+const COLUMN_GAP = 8;
+const LIST_GRID_TEMPLATE_COLUMNS = `${CHECKBOX_COL_WIDTH}px ${INDEX_COL_WIDTH}px minmax(0, 1fr) minmax(0, 1fr) ${TYPE_COL_WIDTH}px ${STATUS_COL_WIDTH}px`;
+
 const AttributeList: React.FC<AttributeListProps> = ({
   dataSource,
   setDataSource,
@@ -83,6 +99,7 @@ const AttributeList: React.FC<AttributeListProps> = ({
   searchText,
   onSearchTextChange,
   onDeleteAttribute,
+  onBatchRemoveAttributes,
 }) => {
   const { token } = theme.useToken();
   const listRef = useRef<HTMLDivElement>(null);
@@ -104,6 +121,17 @@ const AttributeList: React.FC<AttributeListProps> = ({
   );
 
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
+
+  useEffect(() => {
+    const idSet = new Set(filteredData.map((item) => item.id));
+    setSelectedRowKeys((prev) => {
+      const next = prev.filter((key) => idSet.has(String(key)));
+      if (next.length === prev.length && next.every((key, idx) => key === prev[idx])) {
+        return prev;
+      }
+      return next;
+    });
+  }, [dataSource, searchText]);
 
   const handleSelectAll = (e: any) => {
     if (e.target.checked) {
@@ -160,6 +188,45 @@ const AttributeList: React.FC<AttributeListProps> = ({
     >
       {/* Search Bar */}
       <div style={{ padding: "12px 16px", borderBottom: `1px solid ${token.colorBorderSecondary}` }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            marginBottom: 10,
+          }}
+        >
+          <Button
+            type="text"
+            size="small"
+            icon={<AddCircleOutline fontSize="small" />}
+            style={{ color: token.colorPrimary }}
+          />
+          <Button
+            type="text"
+            size="small"
+            icon={<DeleteOutline fontSize="small" />}
+            style={{ color: token.colorPrimary }}
+          />
+          <Button
+            type="text"
+            size="small"
+            icon={<ContentCopy fontSize="small" />}
+            style={{ color: token.colorPrimary }}
+          />
+          <Button
+            type="text"
+            size="small"
+            icon={<FileUpload fontSize="small" />}
+            style={{ color: token.colorPrimary }}
+          />
+          <Button
+            type="text"
+            size="small"
+            icon={<FileDownload fontSize="small" />}
+            style={{ color: token.colorPrimary }}
+          />
+        </div>
         <Input
           placeholder="筛选属性 . . ."
           prefix={<SearchOutlined style={{ color: token.colorTextQuaternary }} />}
@@ -169,46 +236,41 @@ const AttributeList: React.FC<AttributeListProps> = ({
         />
       </div>
 
-      {/* List Header */}
-      <div style={{ 
-        padding: "8px 16px", 
-        borderBottom: `1px solid ${token.colorBorderSecondary}`,
-        background: token.colorFillAlter,
-        display: "flex",
-        alignItems: "center",
-        gap: 12,
-        paddingRight: 40,
-        position: "relative"
-      }}>
-        <Checkbox 
-          checked={filteredData.length > 0 && selectedRowKeys.length === filteredData.length}
-          indeterminate={selectedRowKeys.length > 0 && selectedRowKeys.length < filteredData.length}
-          onChange={handleSelectAll}
-        />
-        <Text type="secondary" style={{ fontSize: 12, width: 30, textAlign: "center" }}>序号</Text>
-        <Flex align="center" style={{ flex: 1, minWidth: 0, gap: 8 }}>
-          <Text type="secondary" style={{ fontSize: 12, flex: 1, minWidth: 0 }}>属性名称</Text>
-          <Text type="secondary" style={{ fontSize: 12, flex: 1, minWidth: 0 }}>属性字段</Text>
-          <Text type="secondary" style={{ fontSize: 12, width: 100, flexShrink: 0 }}>数据类型</Text>
-          <div style={{ width: 16, flexShrink: 0 }}></div>
-        </Flex>
-        {selectedRowKeys.length > 0 && (
-          <Button 
-            type="text" 
-            danger 
-            size="small" 
-            icon={<DeleteOutlined />}
-            onClick={() => {
-              // TODO: Implement batch delete
-              console.log("Batch delete", selectedRowKeys);
-            }}
-            style={{ position: "absolute", right: 8 }}
-          />
-        )}
-      </div>
-
-      {/* List Content */}
+      {/* List Area */}
       <div style={{ flex: 1, overflowY: "auto" }} ref={listRef}>
+        <div style={{
+          padding: `8px ${HORIZONTAL_PADDING}px`,
+          borderBottom: `1px solid ${token.colorBorderSecondary}`,
+          borderLeft: `${LEFT_INDICATOR_WIDTH}px solid transparent`,
+          background: token.colorBgContainer,
+          paddingRight: ACTION_COL_RESERVED_WIDTH,
+          position: "sticky",
+          top: 0,
+          zIndex: 2,
+        }}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: LIST_GRID_TEMPLATE_COLUMNS,
+              columnGap: COLUMN_GAP,
+              alignItems: "center",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Checkbox
+                checked={filteredData.length > 0 && selectedRowKeys.length === filteredData.length}
+                indeterminate={selectedRowKeys.length > 0 && selectedRowKeys.length < filteredData.length}
+                onChange={handleSelectAll}
+              />
+            </div>
+            <Text type="secondary" style={{ fontSize: 12, textAlign: "center", display: "block" }}>序号</Text>
+            <Text type="secondary" style={{ fontSize: 12, textAlign: "center", display: "block" }}>属性名称</Text>
+            <Text type="secondary" style={{ fontSize: 12, textAlign: "center", display: "block" }}>属性字段</Text>
+            <Text type="secondary" style={{ fontSize: 12, textAlign: "center", display: "block" }}>数据类型</Text>
+            <div />
+          </div>
+        </div>
+
         <List
           itemLayout="horizontal"
           dataSource={filteredData}
@@ -220,15 +282,15 @@ const AttributeList: React.FC<AttributeListProps> = ({
               <div id={`attr-list-item-${item.id}`}>
                 <List.Item
                 style={{
-                  padding: "12px 16px",
+                  padding: `12px ${HORIZONTAL_PADDING}px`,
                   cursor: "pointer",
                   transition: "all 0.2s",
-                  borderLeft: `4px solid ${isSelected ? token.colorPrimary : "transparent"}`,
+                  borderLeft: `${LEFT_INDICATOR_WIDTH}px solid ${isSelected ? token.colorPrimary : "transparent"}`,
                   background: isSelected
                     ? token.controlItemBgActive
                     : "transparent",
                   position: "relative",
-                  paddingRight: "40px"
+                  paddingRight: `${ACTION_COL_RESERVED_WIDTH}px`
                 }}
                 className={!isSelected ? "hover:bg-gray-50" : ""} // Keep minimal tailwind for hover if not strict
                 onClick={() => onSelectAttribute(item.id, item)}
@@ -251,73 +313,88 @@ const AttributeList: React.FC<AttributeListProps> = ({
                     />
                   </Dropdown>
                 </div>
-                <div style={{ width: "100%", display: "flex", alignItems: "center", gap: 12 }}>
-                  <Checkbox 
-                    checked={isChecked} 
-                    onChange={(e) => handleSelectRow(item.id, e.target.checked)}
-                    onClick={(e) => e.stopPropagation()}
-                  />
-                  <Text type="secondary" style={{ fontSize: 12, width: 30, textAlign: "center" }}>
+                <div
+                  style={{
+                    width: "100%",
+                    display: "grid",
+                    gridTemplateColumns: LIST_GRID_TEMPLATE_COLUMNS,
+                    columnGap: COLUMN_GAP,
+                    alignItems: "center",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <Checkbox 
+                      checked={isChecked} 
+                      onChange={(e) => handleSelectRow(item.id, e.target.checked)}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  </div>
+                  <Text type="secondary" style={{ fontSize: 12, textAlign: "center", display: "block" }}>
                     {index + 1}
                   </Text>
-                  
-                  <Flex align="center" style={{ flex: 1, minWidth: 0, gap: 8 }}>
-                    <Text
-                      strong
-                      style={{ fontSize: 14, flex: 1, minWidth: 0 }}
-                      ellipsis={{ tooltip: item.name || "未命名属性" }}
-                    >
-                      {item.name || (
-                        <span
-                          style={{
-                            color: token.colorTextQuaternary,
-                            fontStyle: "italic",
-                          }}
-                        >
-                          未命名属性
-                        </span>
-                      )}
-                    </Text>
 
-                    <Text
-                      type="secondary"
-                      style={{ fontSize: 12, fontFamily: "monospace", flex: 1, minWidth: 0 }}
-                      ellipsis={{ tooltip: item.attributeField }}
-                    >
-                      {item.attributeField || '-'}
-                    </Text>
-
-                    <span
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 4,
-                        whiteSpace: "nowrap",
-                        flexShrink: 0,
-                        width: 100
-                      }}
-                      title={item.type}
-                    >
-                      {getTypeIcon(item.type)}
-                      <span style={{ fontSize: 12 }}>
-                        {getTypeLabel(item.type)}
+                  <Text
+                    strong
+                    style={{ fontSize: 14, minWidth: 0, textAlign: "center", display: "block" }}
+                    ellipsis={{ tooltip: item.name || "未命名属性" }}
+                  >
+                    {item.name || (
+                      <span
+                        style={{
+                          color: token.colorTextQuaternary,
+                          fontStyle: "italic",
+                        }}
+                      >
+                        未命名属性
                       </span>
+                    )}
+                  </Text>
+
+                  <Text
+                    type="secondary"
+                    style={{ fontSize: 12, fontFamily: "monospace", minWidth: 0, textAlign: "center", display: "block" }}
+                    ellipsis={{ tooltip: item.attributeField }}
+                  >
+                    {item.attributeField || '-'}
+                  </Text>
+
+                  <span
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 4,
+                      whiteSpace: "nowrap",
+                      minWidth: 0,
+                    }}
+                    title={item.type}
+                  >
+                    {getTypeIcon(item.type)}
+                    <span style={{ fontSize: 12 }}>
+                      {getTypeLabel(item.type)}
                     </span>
-                    
-                    <div style={{ width: 16, flexShrink: 0, display: 'flex', justifyContent: 'center' }}>
-                      {item.required && (
-                        <div
-                          style={{
-                            width: 6,
-                            height: 6,
-                            borderRadius: "50%",
-                            background: token.colorError,
-                          }}
-                          title="必填"
-                        ></div>
-                      )}
-                    </div>
-                  </Flex>
+                  </span>
+
+                  <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                    {item.id.startsWith("new_attr_") ? (
+                      <Tag
+                        color="processing"
+                        style={{ marginInlineEnd: 0, paddingInline: 6, lineHeight: "18px", height: 20 }}
+                      >
+                        NEW
+                      </Tag>
+                    ) : item.required ? (
+                      <div
+                        style={{
+                          width: 6,
+                          height: 6,
+                          borderRadius: "50%",
+                          background: token.colorError,
+                        }}
+                        title="必填"
+                      ></div>
+                    ) : null}
+                  </div>
                 </div>
                 </List.Item>
               </div>
