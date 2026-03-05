@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Splitter, message, Modal, Input } from "antd";
+import { App, Splitter, Input } from "antd";
 import type { DataNode, TreeProps } from "antd/es/tree";
 import CategoryTree from "../AdminCategoryTree";
 import {
@@ -61,6 +61,7 @@ const getLevelByNumber = (level?: number): CategoryTreeNode["level"] => {
 };
 
 const CategoryManagementPage: React.FC = () => {
+  const { message: messageApi, modal } = App.useApp();
   const params = useParams();
   const categoryId = params.id as string;
 
@@ -140,7 +141,7 @@ const CategoryManagementPage: React.FC = () => {
       setLoadedKeys([]);
     } catch (error) {
       console.error(error);
-      message.error("Failed to load segments");
+      messageApi.error("Failed to load segments");
     }
   };
 
@@ -180,7 +181,7 @@ const CategoryManagementPage: React.FC = () => {
       setLoadedKeys((keys) => [...keys, key as React.Key]);
     } catch (error) {
       console.error(error);
-      message.error("Failed to load children");
+      messageApi.error("Failed to load children");
     }
   };
 
@@ -203,10 +204,10 @@ const CategoryManagementPage: React.FC = () => {
     });
   };
 
-  const onSelect: TreeProps["onSelect"] = (keys, info) => {
-    const nextKey = keys.length > 0 ? keys[0] : "";
-    const nextNode = keys.length > 0 ? (info.node as CategoryTreeNode) : undefined;
-
+  const requestCategorySelection = (
+    nextKey: React.Key,
+    nextNode?: CategoryTreeNode,
+  ) => {
     if (nextKey === selectedKey) {
       return;
     }
@@ -220,7 +221,7 @@ const CategoryManagementPage: React.FC = () => {
         unsavedParts.push(`存在 ${attributeUnsavedState.unsavedNewCount} 条未保存新建属性`);
       }
 
-      Modal.confirm({
+      modal.confirm({
         title: "切换分类前确认",
         content: `检测到${unsavedParts.join("，")}。切换后将放弃这些内容，是否继续？`,
         okText: "放弃并切换",
@@ -235,31 +236,36 @@ const CategoryManagementPage: React.FC = () => {
       return;
     }
 
+    setSelectedKey(nextKey);
+    setSelectedNode(nextNode);
+  };
+
+  const onSelect: TreeProps["onSelect"] = (keys, info) => {
+    const nextKey = keys.length > 0 ? keys[0] : "";
+    const nextNode = keys.length > 0 ? (info.node as CategoryTreeNode) : undefined;
+
     if (keys.length > 0) {
-      setSelectedKey(nextKey);
-      setSelectedNode(nextNode);
+      requestCategorySelection(nextKey, nextNode);
     } else {
-      setSelectedKey("");
-      setSelectedNode(undefined);
+      requestCategorySelection("", undefined);
     }
   };
 
   const handleMenuClick = (key: string, node: CategoryTreeNode) => {
     if (key === "design") {
-      setSelectedKey(node.key);
-      setSelectedNode(node);
+      requestCategorySelection(node.key, node);
       return;
     }
 
     if (key === "add") {
       const childLevel = getChildLevel(node.level);
       if (!childLevel) {
-        message.warning("当前节点不支持新增子分类");
+        messageApi.warning("当前节点不支持新增子分类");
         return;
       }
 
       let inputValue = "";
-      Modal.confirm({
+      modal.confirm({
         title: "新增子分类",
         content: (
           <Input
@@ -274,7 +280,7 @@ const CategoryManagementPage: React.FC = () => {
         onOk: () => {
           const trimmed = inputValue.trim();
           if (!trimmed) {
-            message.warning("请输入子分类名称");
+            messageApi.warning("请输入子分类名称");
             return Promise.reject();
           }
 
@@ -310,7 +316,7 @@ const CategoryManagementPage: React.FC = () => {
           setLoadedKeys((keys) =>
             keys.includes(node.key) ? keys : [...keys, node.key],
           );
-          message.success("子分类已新增");
+          messageApi.success("子分类已新增");
           return Promise.resolve();
         },
       });
@@ -319,7 +325,7 @@ const CategoryManagementPage: React.FC = () => {
 
     if (key === "rename") {
       let inputValue = node.dataRef?.title ?? "";
-      Modal.confirm({
+      modal.confirm({
         title: "重命名分类",
         content: (
           <Input
@@ -335,7 +341,7 @@ const CategoryManagementPage: React.FC = () => {
         onOk: () => {
           const trimmed = inputValue.trim();
           if (!trimmed) {
-            message.warning("分类名称不能为空");
+            messageApi.warning("分类名称不能为空");
             return Promise.reject();
           }
 
@@ -365,7 +371,7 @@ const CategoryManagementPage: React.FC = () => {
                 : prev,
             );
           }
-          message.success("重命名成功");
+          messageApi.success("重命名成功");
           return Promise.resolve();
         },
       });
@@ -373,7 +379,7 @@ const CategoryManagementPage: React.FC = () => {
     }
 
     if (key === "delete") {
-      Modal.confirm({
+      modal.confirm({
         title: "确认删除",
         content: "删除后不可恢复，是否继续？",
         okType: "danger",
@@ -385,7 +391,7 @@ const CategoryManagementPage: React.FC = () => {
             setSelectedKey("");
             setSelectedNode(undefined);
           }
-          message.success("分类已删除");
+          messageApi.success("分类已删除");
         },
       });
     }
