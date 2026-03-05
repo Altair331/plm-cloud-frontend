@@ -12,6 +12,7 @@ export interface CategoryTreeProps {
   onLoad?: TreeProps['onLoad'];
   initialExpandedKeys?: React.Key[];
   defaultSelectedKeys?: React.Key[];
+  selectedKeys?: React.Key[];
   searchPlaceholder?: string;
   onRightClick?: TreeProps['onRightClick'];
   titleRender?: TreeProps['titleRender'];
@@ -26,6 +27,7 @@ const CategoryTree = forwardRef<HTMLDivElement, CategoryTreeProps>(({
   onLoad,
   initialExpandedKeys = [],
   defaultSelectedKeys = [],
+  selectedKeys,
   searchPlaceholder = '搜索分类',
   onRightClick,
   titleRender,
@@ -148,6 +150,7 @@ const CategoryTree = forwardRef<HTMLDivElement, CategoryTreeProps>(({
             blockNode
             titleRender={defaultTitleRender}
             defaultSelectedKeys={defaultSelectedKeys}
+            selectedKeys={selectedKeys}
             onRightClick={onRightClick}
           />
         ) : (

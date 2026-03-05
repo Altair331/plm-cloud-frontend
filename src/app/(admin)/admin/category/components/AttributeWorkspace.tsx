@@ -66,6 +66,7 @@ ModuleRegistry.registerModules([AllCommunityModule]);
 
 interface AttributeWorkspaceProps {
   attribute: AttributeItem | null;
+  selectedCount?: number;
   onUpdate: (key: string, value: any) => void;
   enumOptions: EnumOptionItem[];
   setEnumOptions: (data: EnumOptionItem[]) => void;
@@ -83,6 +84,7 @@ const { Panel } = Collapse;
 
 const AttributeWorkspace: React.FC<AttributeWorkspaceProps> = ({
   attribute,
+  selectedCount = 0,
   onUpdate,
   enumOptions,
   setEnumOptions,
@@ -329,6 +331,32 @@ const AttributeWorkspace: React.FC<AttributeWorkspaceProps> = ({
   /* Removed conflicting useEffects */
 
   if (!attribute) {
+    if (selectedCount > 1) {
+      return (
+        <Flex
+          vertical
+          justify="center"
+          align="center"
+          style={{
+            height: "100%",
+            background: token.colorBgLayout,
+            padding: 24,
+          }}
+        >
+          <AppstoreOutlined style={{ fontSize: 52, color: token.colorInfo, marginBottom: 20 }} />
+          <Title level={3} style={{ margin: 0, marginBottom: 16 }}>
+            已选择 {selectedCount} 个属性
+          </Title>
+          <Alert
+            type="info"
+            showIcon
+            message="选择单个属性以查看详细信息并编辑"
+            style={{ maxWidth: 520, width: "100%" }}
+          />
+        </Flex>
+      );
+    }
+
     return (
       <Flex
         justify="center"

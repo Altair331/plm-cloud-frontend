@@ -34,8 +34,9 @@ import FloatingContextMenu from "@/components/ContextMenu/FloatingContextMenu";
 interface AttributeListProps {
   dataSource: AttributeItem[];
   setDataSource: (data: AttributeItem[]) => void;
-  selectedAttributeId: string | null;
-  onSelectAttribute: (id: string, item: AttributeItem) => void;
+  selectedAttributeIds: string[];
+  activeAttributeId: string | null;
+  onSelectionChange: (ids: string[], primaryId: string | null) => void;
   searchText: string;
   onSearchTextChange: (text: string) => void;
   onAddAttribute?: () => void;
@@ -97,8 +98,9 @@ const LIST_GRID_TEMPLATE_COLUMNS = `${CHECKBOX_COL_WIDTH}px ${INDEX_COL_WIDTH}px
 const AttributeList: React.FC<AttributeListProps> = ({
   dataSource,
   setDataSource,
-  selectedAttributeId,
-  onSelectAttribute,
+  selectedAttributeIds,
+  activeAttributeId,
+  onSelectionChange,
   searchText,
   onSearchTextChange,
   onAddAttribute,
@@ -110,13 +112,13 @@ const AttributeList: React.FC<AttributeListProps> = ({
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (selectedAttributeId && listRef.current) {
-      const element = document.getElementById(`attr-list-item-${selectedAttributeId}`);
+    if (activeAttributeId && listRef.current) {
+      const element = document.getElementById(`attr-list-item-${activeAttributeId}`);
       if (element) {
         element.scrollIntoView({ behavior: "smooth", block: "nearest" });
       }
     }
-  }, [selectedAttributeId, dataSource.length]);
+  }, [activeAttributeId, dataSource.length]);
 
   const filteredData = dataSource.filter(
     (item) =>
@@ -125,7 +127,7 @@ const AttributeList: React.FC<AttributeListProps> = ({
       item.attributeField?.toLowerCase().includes(searchText.toLowerCase()),
   );
 
-  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
+  const [anchorRowId, setAnchorRowId] = useState<string | null>(null);
   const [contextMenuState, setContextMenuState] = useState<{
     open: boolean;
     x: number;
@@ -136,30 +138,81 @@ const AttributeList: React.FC<AttributeListProps> = ({
   const [contextMenuRowId, setContextMenuRowId] = useState<string | null>(null);
 
   useEffect(() => {
-    const idSet = new Set(filteredData.map((item) => item.id));
-    setSelectedRowKeys((prev) => {
-      const next = prev.filter((key) => idSet.has(String(key)));
-      if (next.length === prev.length && next.every((key, idx) => key === prev[idx])) {
-        return prev;
+    if (!anchorRowId) return;
+    if (!dataSource.some((item) => item.id === anchorRowId)) {
+      setAnchorRowId(null);
+    }
+  }, [anchorRowId, dataSource]);
+
+  const selectedRowKeys = selectedAttributeIds;
+
+  const emitSelectionChange = (ids: string[], primaryId: string | null) => {
+    const normalizedIds = Array.from(new Set(ids));
+    const nextPrimary =
+      normalizedIds.length === 1 && primaryId && normalizedIds.includes(primaryId)
+        ? primaryId
+        : normalizedIds.length === 1
+          ? normalizedIds[0]
+          : null;
+    onSelectionChange(normalizedIds, nextPrimary);
+  };
+
+  const handleExplorerSelect = (clickedId: string, event: React.MouseEvent) => {
+    const visibleIds = filteredData.map((item) => item.id);
+    const clickedIndex = visibleIds.indexOf(clickedId);
+    if (clickedIndex < 0) return;
+
+    const isCtrlOrMeta = event.ctrlKey || event.metaKey;
+    const isShift = event.shiftKey;
+    const current = selectedRowKeys.map((key) => String(key));
+    const currentSet = new Set(current);
+    let nextSelection: string[] = [];
+
+    if (isShift && anchorRowId && visibleIds.includes(anchorRowId)) {
+      const anchorIndex = visibleIds.indexOf(anchorRowId);
+      const [start, end] =
+        anchorIndex <= clickedIndex
+          ? [anchorIndex, clickedIndex]
+          : [clickedIndex, anchorIndex];
+      const rangeIds = visibleIds.slice(start, end + 1);
+      if (isCtrlOrMeta) {
+        nextSelection = Array.from(new Set([...current, ...rangeIds]));
+      } else {
+        nextSelection = rangeIds;
       }
-      return next;
-    });
-  }, [dataSource, searchText]);
+    } else if (isCtrlOrMeta) {
+      if (currentSet.has(clickedId)) {
+        nextSelection = current.filter((id) => id !== clickedId);
+      } else {
+        nextSelection = [...current, clickedId];
+      }
+    } else {
+      nextSelection = [clickedId];
+    }
+
+    setAnchorRowId(clickedId);
+    emitSelectionChange(nextSelection, nextSelection.length === 1 ? clickedId : null);
+  };
 
   const handleSelectAll = (e: any) => {
+    const visibleIds = filteredData.map((item) => item.id);
+    const current = selectedRowKeys.map((key) => String(key));
     if (e.target.checked) {
-      setSelectedRowKeys(filteredData.map(item => item.id));
+      emitSelectionChange(Array.from(new Set([...current, ...visibleIds])), null);
     } else {
-      setSelectedRowKeys([]);
+      const visibleSet = new Set(visibleIds);
+      emitSelectionChange(current.filter((id) => !visibleSet.has(id)), null);
     }
   };
 
   const handleSelectRow = (id: string, checked: boolean) => {
+    const current = selectedRowKeys.map((key) => String(key));
     if (checked) {
-      setSelectedRowKeys(prev => [...prev, id]);
+      emitSelectionChange([...current, id], null);
     } else {
-      setSelectedRowKeys(prev => prev.filter(key => key !== id));
+      emitSelectionChange(current.filter((key) => key !== id), null);
     }
+    setAnchorRowId(id);
   };
 
   const handleDuplicate = (item: AttributeItem) => {
@@ -208,8 +261,14 @@ const AttributeList: React.FC<AttributeListProps> = ({
     } else {
       setDataSource(dataSource.filter((d) => !ids.includes(d.id)));
     }
-    setSelectedRowKeys([]);
+    emitSelectionChange([], null);
   };
+
+  const filteredIds = filteredData.map((item) => item.id);
+  const filteredSet = new Set(filteredIds);
+  const filteredSelectedCount = selectedRowKeys.filter((key) =>
+    filteredSet.has(String(key)),
+  ).length;
 
   return (
     <div
@@ -376,8 +435,8 @@ const AttributeList: React.FC<AttributeListProps> = ({
           >
             <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
               <Checkbox
-                checked={filteredData.length > 0 && selectedRowKeys.length === filteredData.length}
-                indeterminate={selectedRowKeys.length > 0 && selectedRowKeys.length < filteredData.length}
+                checked={filteredData.length > 0 && filteredSelectedCount === filteredData.length}
+                indeterminate={filteredSelectedCount > 0 && filteredSelectedCount < filteredData.length}
                 onChange={handleSelectAll}
               />
             </div>
@@ -394,7 +453,8 @@ const AttributeList: React.FC<AttributeListProps> = ({
           dataSource={filteredData}
           split={false}
           renderItem={(item, index) => {
-            const isSelected = selectedAttributeId === item.id;
+            const isActive = activeAttributeId === item.id;
+            const isSelected = selectedRowKeys.includes(item.id);
             const isChecked = selectedRowKeys.includes(item.id);
             return (
               <div id={`attr-list-item-${item.id}`}>
@@ -403,21 +463,35 @@ const AttributeList: React.FC<AttributeListProps> = ({
                   padding: `12px ${HORIZONTAL_PADDING}px`,
                   cursor: "pointer",
                   transition: "all 0.2s",
-                  borderLeft: `${LEFT_INDICATOR_WIDTH}px solid ${isSelected ? token.colorPrimary : "transparent"}`,
-                  background: isSelected
+                  userSelect: "none",
+                  WebkitUserSelect: "none",
+                  borderLeft: `${LEFT_INDICATOR_WIDTH}px solid ${isActive ? token.colorPrimary : "transparent"}`,
+                  background: isActive
                     ? token.controlItemBgActive
+                    : isSelected
+                      ? token.controlItemBgHover
                     : contextMenuRowId === item.id
                       ? token.controlItemBgHover
                       : "transparent",
                   position: "relative",
                   paddingRight: `${ACTION_COL_RESERVED_WIDTH}px`
                 }}
-                className={!isSelected ? "hover:bg-gray-50" : ""} // Keep minimal tailwind for hover if not strict
-                onClick={() => onSelectAttribute(item.id, item)}
+                className={!isSelected ? "hover:bg-gray-50" : ""}
+                onMouseDown={(e) => {
+                  if (!e.shiftKey) return;
+                  const target = e.target as HTMLElement;
+                  if (!target.closest("input, textarea, [contenteditable='true']")) {
+                    e.preventDefault();
+                  }
+                }}
+                onClick={(e) => handleExplorerSelect(item.id, e)}
                 onContextMenu={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
-                  setSelectedRowKeys([item.id]);
+                  if (!selectedRowKeys.includes(item.id)) {
+                    emitSelectionChange([item.id], item.id);
+                    setAnchorRowId(item.id);
+                  }
                   setContextMenuRowId(item.id);
                   setContextMenuState({
                     open: true,

@@ -72,6 +72,10 @@ const CategoryManagementPage: React.FC = () => {
 
   const [treeData, setTreeData] = useState<CategoryTreeNode[]>([]);
   const [loadedKeys, setLoadedKeys] = useState<React.Key[]>([]);
+  const [attributeUnsavedState, setAttributeUnsavedState] = useState({
+    hasUnsavedChanges: false,
+    unsavedNewCount: 0,
+  });
 
   const updateNodeInTree = (
     list: CategoryTreeNode[],
@@ -200,9 +204,40 @@ const CategoryManagementPage: React.FC = () => {
   };
 
   const onSelect: TreeProps["onSelect"] = (keys, info) => {
+    const nextKey = keys.length > 0 ? keys[0] : "";
+    const nextNode = keys.length > 0 ? (info.node as CategoryTreeNode) : undefined;
+
+    if (nextKey === selectedKey) {
+      return;
+    }
+
+    if (attributeUnsavedState.hasUnsavedChanges || attributeUnsavedState.unsavedNewCount > 0) {
+      const unsavedParts: string[] = [];
+      if (attributeUnsavedState.hasUnsavedChanges) {
+        unsavedParts.push("当前属性存在未保存修改");
+      }
+      if (attributeUnsavedState.unsavedNewCount > 0) {
+        unsavedParts.push(`存在 ${attributeUnsavedState.unsavedNewCount} 条未保存新建属性`);
+      }
+
+      Modal.confirm({
+        title: "切换分类前确认",
+        content: `检测到${unsavedParts.join("，")}。切换后将放弃这些内容，是否继续？`,
+        okText: "放弃并切换",
+        cancelText: "继续编辑",
+        okType: "danger",
+        onOk: () => {
+          setSelectedKey(nextKey);
+          setSelectedNode(nextNode);
+          setAttributeUnsavedState({ hasUnsavedChanges: false, unsavedNewCount: 0 });
+        },
+      });
+      return;
+    }
+
     if (keys.length > 0) {
-      setSelectedKey(keys[0]);
-      setSelectedNode(info.node as CategoryTreeNode);
+      setSelectedKey(nextKey);
+      setSelectedNode(nextNode);
     } else {
       setSelectedKey("");
       setSelectedNode(undefined);
@@ -410,6 +445,7 @@ const CategoryManagementPage: React.FC = () => {
           <CategoryTree
             onSelect={onSelect}
             treeData={treeData}
+            selectedKeys={selectedKey ? [selectedKey] : []}
             loadData={onLoadData}
             loadedKeys={loadedKeys}
             onLoad={(keys) => setLoadedKeys(keys as React.Key[])}
@@ -418,7 +454,10 @@ const CategoryManagementPage: React.FC = () => {
         </Splitter.Panel>
         <Splitter.Panel>
           {selectedNode ? (
-            <AttributeDesigner currentNode={selectedNode.dataRef} />
+            <AttributeDesigner
+              currentNode={selectedNode.dataRef}
+              onUnsavedStateChange={setAttributeUnsavedState}
+            />
           ) : (
             <div
               style={{

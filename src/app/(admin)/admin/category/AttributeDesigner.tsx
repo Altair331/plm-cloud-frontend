@@ -9,7 +9,6 @@ import {
   theme,
   Flex,
 } from "antd";
-import { PlusOutlined } from "@ant-design/icons";
 import AttributeList from "./components/AttributeList";
 import AttributeWorkspace from "./components/AttributeWorkspace";
 import { AttributeItem, EnumOptionItem } from "./components/types";
@@ -57,16 +56,22 @@ const normalizeEnumOptionsForCompare = (options: EnumOptionItem[]) =>
 
 interface Props {
   currentNode?: { title?: string; code?: string; [key: string]: any };
+  onUnsavedStateChange?: (state: {
+    hasUnsavedChanges: boolean;
+    unsavedNewCount: number;
+  }) => void;
 }
 
 const AttributeDesigner: React.FC<Props> = ({
   currentNode,
+  onUnsavedStateChange,
 }) => {
   const { token } = theme.useToken();
   const { message: messageApi, modal } = App.useApp();
   const [selectedAttributeId, setSelectedAttributeId] = useState<string | null>(
     null,
   );
+  const [selectedAttributeIds, setSelectedAttributeIds] = useState<string[]>([]);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [searchText, setSearchText] = useState("");
   const [dataSource, setDataSource] = useState<AttributeItem[]>([]);
@@ -143,6 +148,7 @@ const AttributeDesigner: React.FC<Props> = ({
       
       if (selectAttributeId) {
         setSelectedAttributeId(selectAttributeId);
+        setSelectedAttributeIds([selectAttributeId]);
       }
     } catch (e) {
       console.error(e);
@@ -156,6 +162,7 @@ const AttributeDesigner: React.FC<Props> = ({
     if (currentNode?.code) {
       loadAttributes(currentNode.code, undefined, []);
       setSelectedAttributeId(null);
+      setSelectedAttributeIds([]);
       setCurrentAttribute(null);
       setBaselineAttribute(null);
       setEnumOptions([]);
@@ -164,6 +171,7 @@ const AttributeDesigner: React.FC<Props> = ({
     } else {
       setDataSource([]);
       setSelectedAttributeId(null);
+      setSelectedAttributeIds([]);
       setCurrentAttribute(null);
       setBaselineAttribute(null);
       setEnumOptions([]);
@@ -175,7 +183,7 @@ const AttributeDesigner: React.FC<Props> = ({
   // Sync currentAttribute from dataSource when selection changes
   useEffect(() => {
     const fetchDetail = async () => {
-      if (selectedAttributeId) {
+      if (selectedAttributeId && selectedAttributeIds.length === 1) {
         // First check if it's a new unsaved item (local only) using ID
         if (selectedAttributeId.startsWith('new_attr_')) {
              const localItem = dataSource.find(i => i.id === selectedAttributeId);
@@ -223,13 +231,14 @@ const AttributeDesigner: React.FC<Props> = ({
       }
     };
     fetchDetail();
-  }, [selectedAttributeId, dataSource]);
+  }, [selectedAttributeId, selectedAttributeIds.length, dataSource]);
 
   // Sync selection state when dataSource changes (e.g. deletion)
   useEffect(() => {
     if (selectedAttributeId && !dataSource.some(item => item.id === selectedAttributeId)) {
       setSelectedAttributeId(null);
     }
+    setSelectedAttributeIds((prev) => prev.filter((id) => dataSource.some((item) => item.id === id)));
   }, [dataSource, selectedAttributeId]);
 
   const computedDirty = useMemo(() => {
@@ -268,15 +277,23 @@ const AttributeDesigner: React.FC<Props> = ({
     setCurrentAttribute(updated);
   };
 
-  const applySelection = (targetId: string) => {
-    setSelectedAttributeId(targetId);
+  const applyMultiSelection = (ids: string[], primaryId: string | null) => {
+    setSelectedAttributeIds(ids);
+    setSelectedAttributeId(ids.length === 1 ? (primaryId || ids[0]) : null);
   };
 
-  const trySwitchSelection = (targetId: string) => {
-    if (selectedAttributeId === targetId) return;
+  const tryApplySelectionChange = (ids: string[], primaryId: string | null) => {
+    const normalizedIds = ids.filter((id) => dataSource.some((item) => item.id === id));
+    const nextPrimary = normalizedIds.length === 1 ? (primaryId || normalizedIds[0]) : null;
+    const samePrimary = selectedAttributeId === nextPrimary;
+
+    if (samePrimary) {
+      setSelectedAttributeIds(normalizedIds);
+      return;
+    }
 
     if (!hasUnsavedChanges) {
-      applySelection(targetId);
+      applyMultiSelection(normalizedIds, nextPrimary);
       return;
     }
 
@@ -292,7 +309,7 @@ const AttributeDesigner: React.FC<Props> = ({
           setEnumOptions([...baselineEnumOptions]);
         }
         setHasUnsavedChanges(false);
-        applySelection(targetId);
+        applyMultiSelection(normalizedIds, nextPrimary);
       },
     });
   };
@@ -310,6 +327,7 @@ const AttributeDesigner: React.FC<Props> = ({
     setDataSource((prev) => [...prev, newAttr]);
     if (!selectedAttributeId || !isNewAttributeId(selectedAttributeId)) {
       setSelectedAttributeId(newAttr.id);
+      setSelectedAttributeIds([newAttr.id]);
     }
   };
 
@@ -325,6 +343,7 @@ const AttributeDesigner: React.FC<Props> = ({
     };
     setDataSource((prev) => [...prev, duplicate]);
     setSelectedAttributeId(duplicate.id);
+    setSelectedAttributeIds([duplicate.id]);
   };
 
   const handleSingleSave = async (
@@ -429,6 +448,7 @@ const AttributeDesigner: React.FC<Props> = ({
           setDataSource((prev) => prev.filter((item) => item.id !== attribute.id));
           if (selectedAttributeId === attribute.id) {
             setSelectedAttributeId(null);
+            setSelectedAttributeIds((prev) => prev.filter((id) => id !== attribute.id));
             setCurrentAttribute(null);
             setBaselineAttribute(null);
             setEnumOptions([]);
@@ -464,6 +484,7 @@ const AttributeDesigner: React.FC<Props> = ({
 
     if (unsavedIds.length > 0) {
       setDataSource((prev) => prev.filter((item) => !unsavedIds.includes(item.id)));
+      setSelectedAttributeIds((prev) => prev.filter((id) => !unsavedIds.includes(id)));
       if (selectedAttributeId && unsavedIds.includes(selectedAttributeId)) {
         setSelectedAttributeId(null);
         setCurrentAttribute(null);
@@ -485,6 +506,18 @@ const AttributeDesigner: React.FC<Props> = ({
     const index = unsavedNewIds.findIndex((id) => id === selectedAttributeId);
     return index > -1 && index < unsavedNewIds.length - 1;
   }, [dataSource, selectedAttributeId]);
+
+  const unsavedNewCount = useMemo(
+    () => dataSource.filter((item) => isNewAttributeId(item.id)).length,
+    [dataSource],
+  );
+
+  useEffect(() => {
+    onUnsavedStateChange?.({
+      hasUnsavedChanges,
+      unsavedNewCount,
+    });
+  }, [hasUnsavedChanges, unsavedNewCount, onUnsavedStateChange]);
 
   const handleSaveAll = () => {
     // Optional: Bulk save implementation if backend supports it, otherwise warn user
@@ -540,8 +573,9 @@ const AttributeDesigner: React.FC<Props> = ({
           <AttributeList
             dataSource={dataSource}
             setDataSource={setDataSource}
-            selectedAttributeId={selectedAttributeId}
-            onSelectAttribute={(id) => trySwitchSelection(id)}
+            selectedAttributeIds={selectedAttributeIds}
+            activeAttributeId={selectedAttributeId}
+            onSelectionChange={tryApplySelectionChange}
             searchText={searchText}
             onSearchTextChange={setSearchText}
             onAddAttribute={handleAddAttribute}
@@ -552,7 +586,8 @@ const AttributeDesigner: React.FC<Props> = ({
         </Splitter.Panel>
         <Splitter.Panel>
           <AttributeWorkspace
-            attribute={currentAttribute}
+            attribute={selectedAttributeIds.length === 1 ? currentAttribute : null}
+            selectedCount={selectedAttributeIds.length}
             onUpdate={handleAttributeUpdate}
             enumOptions={enumOptions}
             setEnumOptions={setEnumOptions}
@@ -565,6 +600,7 @@ const AttributeDesigner: React.FC<Props> = ({
               if (selectedAttributeId === id) {
                 setSelectedAttributeId(null);
               }
+              setSelectedAttributeIds((prev) => prev.filter((itemId) => itemId !== id));
               setCurrentAttribute(null);
               setBaselineAttribute(null);
               setEnumOptions([]);
