@@ -14,7 +14,7 @@ import CategoryTree, {
 } from "@/features/category/CategoryTree";
 import FloatingContextMenu from "@/components/ContextMenu/FloatingContextMenu";
 import CreateCategoryModal from "./components/CreateCategoryModal";
-import { metaCategoryApi } from "@/services/metaCategory";
+import { metaCategoryApi, type MetaCategoryDetailDto } from "@/services/metaCategory";
 import {
   AddCircleOutline,
   DeleteOutline,
@@ -25,7 +25,16 @@ import {
 
 interface AdminCategoryTreeProps extends CategoryTreeProps {
   onMenuClick?: (key: string, node: DataNode) => void;
-  onCategoryCreated?: () => void;
+  onCategoryCreated?: (
+    created: MetaCategoryDetailDto,
+    parent?: {
+      id?: string | null;
+      code?: string;
+      name?: string;
+      level?: number;
+      path?: string;
+    } | null,
+  ) => void;
 }
 
 const AdminCategoryTree: React.FC<AdminCategoryTreeProps> = ({
@@ -277,7 +286,7 @@ const AdminCategoryTree: React.FC<AdminCategoryTreeProps> = ({
         onOk={async (values) => {
           setCreateSubmitting(true);
           try {
-            await metaCategoryApi.createCategory(
+            const created = await metaCategoryApi.createCategory(
               {
                 code: values.code,
                 name: values.name,
@@ -290,7 +299,7 @@ const AdminCategoryTree: React.FC<AdminCategoryTreeProps> = ({
             );
             messageApi.success("分类创建成功");
             setCreateModalVisible(false);
-            onCategoryCreated?.();
+            onCategoryCreated?.(created, createParentNode);
           } catch (e: any) {
             const msg = e?.message || e?.error || "分类创建失败";
             messageApi.error(msg);

@@ -7,6 +7,7 @@ import CategoryTree from "../AdminCategoryTree";
 import {
   metaCategoryApi,
   MetaCategoryNodeDto,
+  type MetaCategoryDetailDto,
 } from "@/services/metaCategory";
 import {
   AppstoreOutlined,
@@ -397,6 +398,71 @@ const CategoryManagementPage: React.FC = () => {
     }
   };
 
+  const handleCategoryCreated = (
+    created: MetaCategoryDetailDto,
+    parent?: {
+      id?: string | null;
+      level?: number;
+      path?: string;
+      code?: string;
+      name?: string;
+    } | null,
+  ) => {
+    const levelNumber =
+      created.level ?? (parent?.level ? parent.level + 1 : 1);
+    const level = getLevelByNumber(levelNumber);
+    const name = created.latestVersion?.name || "未命名分类";
+
+    const newNode: CategoryTreeNode = {
+      key: created.id,
+      title: `${created.code} - ${name}`,
+      isLeaf: true,
+      dataRef: {
+        id: created.id,
+        taxonomy: "UNSPSC",
+        code: created.code,
+        name,
+        level: levelNumber,
+        parentId: created.parentId || null,
+        path: created.path,
+        hasChildren: false,
+        leaf: true,
+        status: created.status,
+        sort: created.sort,
+      },
+      level,
+      icon: getDefaultIconByLevel(level),
+    };
+
+    if (!created.parentId) {
+      setTreeData((prev) => {
+        if (prev.some((item) => item.key === created.id)) return prev;
+        return [...prev, newNode];
+      });
+      return;
+    }
+
+    setTreeData((origin) =>
+      updateNodeInTree(origin, created.parentId!, (targetNode) => {
+        const existingChildren = targetNode.children ?? [];
+        if (existingChildren.some((child) => child.key === created.id)) {
+          return targetNode;
+        }
+        return {
+          ...targetNode,
+          isLeaf: false,
+          children: [...existingChildren, newNode],
+          dataRef: targetNode.dataRef
+            ? { ...targetNode.dataRef, hasChildren: true, leaf: false }
+            : targetNode.dataRef,
+        };
+      }),
+    );
+    setLoadedKeys((keys) =>
+      keys.includes(created.parentId!) ? keys : [...keys, created.parentId!],
+    );
+  };
+
   if (categoryId !== "2") {
     return (
       <div
@@ -456,9 +522,7 @@ const CategoryManagementPage: React.FC = () => {
             loadedKeys={loadedKeys}
             onLoad={(keys) => setLoadedKeys(keys as React.Key[])}
             onMenuClick={handleMenuClick}
-            onCategoryCreated={() => {
-              loadSegments();
-            }}
+            onCategoryCreated={handleCategoryCreated}
           />
         </Splitter.Panel>
         <Splitter.Panel>
