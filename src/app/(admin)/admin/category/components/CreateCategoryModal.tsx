@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { App, Form, Input, Select, Button, Row, Col, Space, Card, theme, Typography } from 'antd';
 import dynamic from 'next/dynamic';
 import DraggableModal from '@/components/DraggableModal';
@@ -31,7 +31,6 @@ const quillFormats = [
   'color',
   'background',
   'list',
-  'bullet',
   'align',
   'blockquote',
   'code-block',
@@ -42,17 +41,58 @@ const quillFormats = [
 export interface CreateCategoryModalProps {
   open: boolean;
   onCancel: () => void;
-  onOk: (values: any) => void;
+  onOk: (values: any) => Promise<void> | void;
+  parentNode?: {
+    id?: string | null;
+    code?: string;
+    name?: string;
+    level?: number;
+    path?: string;
+    rootCode?: string;
+    rootName?: string;
+  } | null;
+  submitLoading?: boolean;
 }
 
-const CreateCategoryModal: React.FC<CreateCategoryModalProps> = ({ open, onCancel, onOk }) => {
+const CreateCategoryModal: React.FC<CreateCategoryModalProps> = ({
+  open,
+  onCancel,
+  onOk,
+  parentNode,
+  submitLoading,
+}) => {
   const [form] = Form.useForm();
   const { token } = theme.useToken();
   const { modal } = App.useApp();
 
-  const handleFinish = (values: any) => {
+  useEffect(() => {
+    if (!open) return;
+    form.setFieldsValue({
+      code: '',
+      name: '',
+      businessDomain: 'MATERIAL',
+      parentId: parentNode?.id || null,
+      parentDisplay: parentNode?.code || parentNode?.name
+        ? `${parentNode?.code || '-'} - ${parentNode?.name || '未命名分类'}`
+        : '根分类（无父级）',
+      rootDisplay: (() => {
+        if (!parentNode) return '当前创建为根分类';
+        if (parentNode.rootCode) {
+          return `${parentNode.rootCode} - ${parentNode.rootName || '未命名根分类'}`;
+        }
+        if (parentNode.level === 1) {
+          return `${parentNode.code || '-'} - ${parentNode.name || '未命名分类'}`;
+        }
+        return '根分类信息加载中...';
+      })(),
+      status: 'CREATED',
+      description: '',
+    });
+  }, [open, parentNode, form]);
+
+  const handleFinish = async (values: any) => {
+    await onOk(values);
     form.resetFields();
-    onOk(values);
   };
 
   const handleRequestClose = () => {
@@ -94,26 +134,14 @@ const CreateCategoryModal: React.FC<CreateCategoryModalProps> = ({ open, onCance
     >
       <div style={{ padding: '0 0 16px 0' }}>
         <Space size="middle" style={{ marginBottom: 16 }}>
-          <Button type="primary" onClick={() => form.submit()}>保存</Button>
-          <Button>复制新增</Button>
+          <Button type="primary" loading={submitLoading} onClick={() => form.submit()}>保存</Button>
+          <Button disabled>复制新增</Button>
         </Space>
 
         <Form
           form={form}
           layout="vertical"
           onFinish={handleFinish}
-          initialValues={{
-            code: 'FL00000001',
-            name: '工业液压机',
-            domain: '物料（自动获取）',
-            parent: '液压机（自动获取）',
-            status: 'draft',
-            root: '工业设备及工具',
-            version: 'V01',
-            versionDate: '2026-02-28',
-            creator: '系统管理员',
-            createDate: '2026-02-28'
-          }}
         >
           <Card 
             size="small" 
@@ -139,13 +167,18 @@ const CreateCategoryModal: React.FC<CreateCategoryModalProps> = ({ open, onCance
 
             <Row gutter={24}>
               <Col span={12}>
-                <Form.Item label="业务领域" name="domain">
-                  <Input readOnly style={readOnlyStyle} />
+                <Form.Item label="业务领域" name="businessDomain">
+                  <Select>
+                    <Option value="MATERIAL">物料 (MATERIAL)</Option>
+                  </Select>
                 </Form.Item>
               </Col>
               <Col span={12}>
-                <Form.Item label="父级分类" name="parent">
+                <Form.Item label="父级分类" name="parentDisplay">
                   <Input readOnly style={readOnlyStyle} />
+                </Form.Item>
+                <Form.Item name="parentId" hidden>
+                  <Input />
                 </Form.Item>
               </Col>
             </Row>
@@ -154,14 +187,14 @@ const CreateCategoryModal: React.FC<CreateCategoryModalProps> = ({ open, onCance
               <Col span={12}>
                 <Form.Item label="分类状态" name="status">
                   <Select>
-                    <Option value="draft">创建</Option>
-                    <Option value="active">生效</Option>
-                    <Option value="inactive">失效</Option>
+                    <Option value="CREATED">创建</Option>
+                    <Option value="EFFECTIVE">生效</Option>
+                    <Option value="INVALID">失效</Option>
                   </Select>
                 </Form.Item>
               </Col>
               <Col span={12}>
-                <Form.Item label="根分类" name="root">
+                <Form.Item label="根分类" name="rootDisplay">
                   <Input readOnly style={readOnlyStyle} />
                 </Form.Item>
               </Col>
@@ -192,28 +225,10 @@ const CreateCategoryModal: React.FC<CreateCategoryModalProps> = ({ open, onCance
             </Row>
 
             <Row gutter={24}>
-              <Col span={12}>
-                <Form.Item label="版本" name="version">
-                  <Input readOnly style={readOnlyStyle} />
-                </Form.Item>
-              </Col>
-              <Col span={12}>
-                <Form.Item label="版本日期" name="versionDate">
-                  <Input readOnly style={readOnlyStyle} />
-                </Form.Item>
-              </Col>
-            </Row>
-
-            <Row gutter={24}>
-              <Col span={12}>
-                <Form.Item label="创建人" name="creator">
-                  <Input readOnly style={readOnlyStyle} />
-                </Form.Item>
-              </Col>
-              <Col span={12}>
-                <Form.Item label="创建日期" name="createDate">
-                  <Input readOnly style={readOnlyStyle} />
-                </Form.Item>
+              <Col span={24}>
+                <Text type="secondary" style={{ fontSize: token.fontSizeSM }}>
+                  说明：分类编码创建后不可修改；排序由系统自动分配并在拖拽/移动后自动重算。
+                </Text>
               </Col>
             </Row>
           </Card>

@@ -48,6 +48,41 @@ export interface MetaTaxonomyDto {
   levelConfigs: MetaTaxonomyLevelConfigDto[];
 }
 
+export interface CreateCategoryRequestDto {
+  code: string;
+  name: string;
+  businessDomain: string;
+  parentId?: string | null;
+  status: 'CREATED' | 'EFFECTIVE' | 'INVALID';
+  description?: string;
+  sort?: number;
+}
+
+export interface MetaCategoryVersionDto {
+  versionNo: number;
+  versionDate: string;
+  name: string;
+  description?: string;
+  updatedBy?: string;
+}
+
+export interface MetaCategoryDetailDto {
+  id: string;
+  code: string;
+  businessDomain: string;
+  status: string;
+  parentId?: string | null;
+  rootId?: string;
+  rootCode?: string;
+  path?: string;
+  level?: number;
+  depth?: number;
+  sort?: number;
+  createdBy?: string;
+  createdAt?: string;
+  latestVersion?: MetaCategoryVersionDto;
+}
+
 const CATEGORY_BASE = '/api/meta/categories';
 const TAXONOMY_BASE = '/api/meta/taxonomies';
 
@@ -88,5 +123,16 @@ export const metaCategoryApi = {
 
   getTaxonomy(code: string): Promise<MetaTaxonomyDto> {
     return request.get(`${TAXONOMY_BASE}/${encodeURIComponent(code)}`);
+  },
+
+  createCategory(
+    data: CreateCategoryRequestDto,
+    options?: { operator?: string },
+  ): Promise<MetaCategoryDetailDto> {
+    return request.post(`${CATEGORY_BASE}`, data, {
+      params: {
+        operator: options?.operator || 'admin',
+      },
+    });
   }
 };

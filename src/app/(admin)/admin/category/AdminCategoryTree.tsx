@@ -14,6 +14,7 @@ import CategoryTree, {
 } from "@/features/category/CategoryTree";
 import FloatingContextMenu from "@/components/ContextMenu/FloatingContextMenu";
 import CreateCategoryModal from "./components/CreateCategoryModal";
+import { metaCategoryApi } from "@/services/metaCategory";
 import {
   AddCircleOutline,
   DeleteOutline,
@@ -24,10 +25,12 @@ import {
 
 interface AdminCategoryTreeProps extends CategoryTreeProps {
   onMenuClick?: (key: string, node: DataNode) => void;
+  onCategoryCreated?: () => void;
 }
 
 const AdminCategoryTree: React.FC<AdminCategoryTreeProps> = ({
   onMenuClick,
+  onCategoryCreated,
   ...props
 }) => {
   const { token } = theme.useToken();
@@ -35,6 +38,16 @@ const AdminCategoryTree: React.FC<AdminCategoryTreeProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
 
   const [createModalVisible, setCreateModalVisible] = useState(false);
+  const [createSubmitting, setCreateSubmitting] = useState(false);
+  const [createParentNode, setCreateParentNode] = useState<{
+    id?: string | null;
+    code?: string;
+    name?: string;
+    level?: number;
+    path?: string;
+    rootCode?: string;
+    rootName?: string;
+  } | null>(null);
 
   const [contextMenuState, setContextMenuState] = useState<{
     visible: boolean;
@@ -113,6 +126,65 @@ const AdminCategoryTree: React.FC<AdminCategoryTreeProps> = ({
     });
   };
 
+  const findNodeByKey = (list: DataNode[], key: React.Key): DataNode | null => {
+    for (const node of list) {
+      if (node.key === key) return node;
+      if (node.children) {
+        const found = findNodeByKey(node.children, key);
+        if (found) return found;
+      }
+    }
+    return null;
+  };
+
+  const openCreateModal = (node?: DataNode | null) => {
+    const nodeRef = (node as any)?.dataRef as
+      | {
+          id?: string;
+          code?: string;
+          name?: string;
+          level?: number;
+          path?: string;
+          taxonomy?: string;
+        }
+      | undefined;
+
+    setCreateParentNode(
+      nodeRef
+        ? {
+            id: nodeRef.id,
+            code: nodeRef.code,
+            name: nodeRef.name,
+            level: nodeRef.level,
+            path: nodeRef.path,
+            rootCode: undefined,
+            rootName: undefined,
+          }
+        : null,
+    );
+    setCreateModalVisible(true);
+
+    if (!nodeRef?.id) return;
+
+    metaCategoryApi
+      .getNodePath(nodeRef.id, nodeRef.taxonomy || "UNSPSC")
+      .then((pathNodes) => {
+        const rootNode = pathNodes?.[0];
+        if (!rootNode) return;
+        setCreateParentNode((prev) => {
+          if (!prev || prev.id !== nodeRef.id) return prev;
+          return {
+            ...prev,
+            rootCode: rootNode.code,
+            rootName: rootNode.name,
+          };
+        });
+      })
+      .catch(() => {
+        // Keep fallback behavior if path query fails.
+      });
+  };
+
   return (
     <>
       <CategoryTree
@@ -133,7 +205,11 @@ const AdminCategoryTree: React.FC<AdminCategoryTreeProps> = ({
               size="small"
               icon={<AddCircleOutline fontSize="small" />}
               style={{ color: token.colorPrimary }}
-              onClick={() => setCreateModalVisible(true)}
+              onClick={() => {
+                const activeKey = props.selectedKeys?.[0];
+                const activeNode = activeKey ? findNodeByKey(props.treeData, activeKey) : null;
+                openCreateModal(activeNode);
+              }}
             />
             <Button
               type="text"
@@ -174,6 +250,11 @@ const AdminCategoryTree: React.FC<AdminCategoryTreeProps> = ({
             setContextMenuState((prev) => ({ ...prev, visible: false }));
             return;
           }
+          if (key === "add") {
+            openCreateModal(contextMenuState.node);
+            setContextMenuState((prev) => ({ ...prev, visible: false }));
+            return;
+          }
           if (onMenuClick && contextMenuState.node) {
             onMenuClick(key, contextMenuState.node);
           } else {
@@ -190,11 +271,33 @@ const AdminCategoryTree: React.FC<AdminCategoryTreeProps> = ({
 
       <CreateCategoryModal
         open={createModalVisible}
+        parentNode={createParentNode}
+        submitLoading={createSubmitting}
         onCancel={() => setCreateModalVisible(false)}
-        onOk={(values) => {
-          messageApi.success("保存成功");
-          console.log(values);
-          setCreateModalVisible(false);
+        onOk={async (values) => {
+          setCreateSubmitting(true);
+          try {
+            await metaCategoryApi.createCategory(
+              {
+                code: values.code,
+                name: values.name,
+                businessDomain: values.businessDomain,
+                parentId: values.parentId || undefined,
+                status: values.status,
+                description: values.description,
+              },
+              { operator: "admin" },
+            );
+            messageApi.success("分类创建成功");
+            setCreateModalVisible(false);
+            onCategoryCreated?.();
+          } catch (e: any) {
+            const msg = e?.message || e?.error || "分类创建失败";
+            messageApi.error(msg);
+            throw e;
+          } finally {
+            setCreateSubmitting(false);
+          }
         }}
       />
     </>

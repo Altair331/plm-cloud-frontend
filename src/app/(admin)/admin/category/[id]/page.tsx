@@ -456,6 +456,9 @@ const CategoryManagementPage: React.FC = () => {
             loadedKeys={loadedKeys}
             onLoad={(keys) => setLoadedKeys(keys as React.Key[])}
             onMenuClick={handleMenuClick}
+            onCategoryCreated={() => {
+              loadSegments();
+            }}
           />
         </Splitter.Panel>
         <Splitter.Panel>
