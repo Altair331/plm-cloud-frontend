@@ -1,6 +1,7 @@
 import React from 'react';
 import { AntdRegistry } from '@ant-design/nextjs-registry';
 import './globals.css';
+import AppProviders from '@/components/providers/AppProviders';
 
 export const metadata = {
   title: 'PLM Cloud Platform',
@@ -15,7 +16,9 @@ export default function RootLayout({
   return (
     <html lang="zh-cn">
       <body>
-        <AntdRegistry>{children}</AntdRegistry>
+        <AntdRegistry>
+          <AppProviders>{children}</AppProviders>
+        </AntdRegistry>
       </body>
     </html>
   );

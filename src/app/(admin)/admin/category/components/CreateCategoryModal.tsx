@@ -2,10 +2,12 @@ import React, { useEffect } from 'react';
 import { App, Form, Input, Select, Button, Row, Col, Space, Card, theme, Typography } from 'antd';
 import dynamic from 'next/dynamic';
 import DraggableModal from '@/components/DraggableModal';
+import { useDictionary } from '@/contexts/DictionaryContext';
 
 const { Option } = Select;
 const { Text } = Typography;
 const ReactQuill = dynamic(() => import('react-quill-new'), { ssr: false });
+const EMPTY_QUILL_DELTA_JSON = '{"ops":[{"insert":"\\n"}]}'
 
 const quillModules = {
   toolbar: [
@@ -64,6 +66,16 @@ const CreateCategoryModal: React.FC<CreateCategoryModalProps> = ({
   const [form] = Form.useForm();
   const { token } = theme.useToken();
   const { modal } = App.useApp();
+  const { ensureScene, getEntries } = useDictionary();
+
+  useEffect(() => {
+    void ensureScene('category-admin');
+  }, [ensureScene]);
+
+  const businessDomainEntries = getEntries('META_CATEGORY_BUSINESS_DOMAIN');
+  const statusEntries = getEntries('META_CATEGORY_STATUS').filter((entry) =>
+    ['CREATED', 'EFFECTIVE', 'INVALID'].includes(String(entry.value).toUpperCase()),
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -86,7 +98,7 @@ const CreateCategoryModal: React.FC<CreateCategoryModalProps> = ({
         return '根分类信息加载中...';
       })(),
       status: 'CREATED',
-      description: '',
+      description: EMPTY_QUILL_DELTA_JSON,
     });
   }, [open, parentNode, form]);
 
@@ -169,7 +181,13 @@ const CreateCategoryModal: React.FC<CreateCategoryModalProps> = ({
               <Col span={12}>
                 <Form.Item label="业务领域" name="businessDomain">
                   <Select>
-                    <Option value="MATERIAL">物料 (MATERIAL)</Option>
+                    {businessDomainEntries.length > 0
+                      ? businessDomainEntries.map((entry) => (
+                          <Option key={entry.value} value={entry.value}>
+                            {entry.label} ({entry.value})
+                          </Option>
+                        ))
+                      : <Option value="MATERIAL">物料 (MATERIAL)</Option>}
                   </Select>
                 </Form.Item>
               </Col>
@@ -187,9 +205,19 @@ const CreateCategoryModal: React.FC<CreateCategoryModalProps> = ({
               <Col span={12}>
                 <Form.Item label="分类状态" name="status">
                   <Select>
-                    <Option value="CREATED">创建</Option>
-                    <Option value="EFFECTIVE">生效</Option>
-                    <Option value="INVALID">失效</Option>
+                    {statusEntries.length > 0
+                      ? statusEntries.map((entry) => (
+                          <Option key={entry.value} value={entry.value}>
+                            {entry.label}
+                          </Option>
+                        ))
+                      : (
+                        <>
+                          <Option value="CREATED">创建</Option>
+                          <Option value="EFFECTIVE">生效</Option>
+                          <Option value="INVALID">失效</Option>
+                        </>
+                      )}
                   </Select>
                 </Form.Item>
               </Col>
@@ -212,7 +240,27 @@ const CreateCategoryModal: React.FC<CreateCategoryModalProps> = ({
                       background: token.colorBgContainer,
                     }}
                   >
-                    <Form.Item name="description" noStyle>
+                    <Form.Item
+                      name="description"
+                      noStyle
+                      trigger="onChange"
+                      getValueFromEvent={(_content, _delta, _source, editor) => {
+                        if (!editor || typeof editor.getContents !== 'function') {
+                          return EMPTY_QUILL_DELTA_JSON;
+                        }
+                        return JSON.stringify(editor.getContents());
+                      }}
+                      getValueProps={(value) => {
+                        if (!value || typeof value !== 'string') {
+                          return { value: undefined };
+                        }
+                        try {
+                          return { value: JSON.parse(value) };
+                        } catch {
+                          return { value: undefined };
+                        }
+                      }}
+                    >
                       <ReactQuill
                         theme="snow"
                         modules={quillModules}

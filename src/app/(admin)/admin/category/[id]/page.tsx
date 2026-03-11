@@ -16,6 +16,8 @@ import {
   QuestionCircleOutlined,
 } from "@ant-design/icons";
 import AttributeDesigner from "../AttributeDesigner";
+import { useDictionary } from "@/contexts/DictionaryContext";
+import type { MetaDictionaryEntryDto } from "@/models/dictionary";
 
 import { useParams } from "next/navigation";
 
@@ -45,18 +47,32 @@ const getChildLevel = (
   return undefined;
 };
 
-const getStatusIcon = (status?: string) => {
-  const normalized = (status || "").toUpperCase();
+const resolveStatusSemantic = (
+  status: string | undefined,
+  entries: MetaDictionaryEntryDto[],
+) => {
+  const normalized = String(status || "").toUpperCase();
+  const matched = entries.find((entry) => {
+    const dbValue = typeof entry.extra?.dbValue === "string" ? entry.extra.dbValue : undefined;
+    return [entry.key, entry.value, dbValue]
+      .filter(Boolean)
+      .some((item) => String(item).toUpperCase() === normalized);
+  });
+  return String(matched?.value || normalized).toUpperCase();
+};
 
-  if (normalized === "CREATED" || normalized === "DRAFT") {
+const getStatusIcon = (status?: string, entries: MetaDictionaryEntryDto[] = []) => {
+  const semantic = resolveStatusSemantic(status, entries);
+
+  if (semantic === "CREATED" || semantic === "DRAFT") {
     return <ClockCircleOutlined style={{ color: "#faad14" }} />;
   }
 
-  if (normalized === "EFFECTIVE" || normalized === "ACTIVE") {
+  if (semantic === "EFFECTIVE" || semantic === "ACTIVE") {
     return <CheckCircleOutlined style={{ color: "#52c41a" }} />;
   }
 
-  if (normalized === "INVALID" || normalized === "INACTIVE") {
+  if (semantic === "INVALID" || semantic === "INACTIVE") {
     return <StopOutlined style={{ color: "#ff4d4f" }} />;
   }
 
@@ -71,11 +87,32 @@ const getLevelByNumber = (level?: number): CategoryTreeNode["level"] => {
   return "item";
 };
 
+const deltaJsonToPlainText = (input?: string | null) => {
+  if (!input) return "";
+  try {
+    const parsed = JSON.parse(input);
+    if (!parsed || !Array.isArray(parsed.ops)) return input;
+    return parsed.ops
+      .map((op: any) => (typeof op?.insert === "string" ? op.insert : ""))
+      .join("")
+      .trim();
+  } catch {
+    return input;
+  }
+};
+
 const CategoryManagementPage: React.FC = () => {
   const { message: messageApi, modal } = App.useApp();
   const { token } = theme.useToken();
+  const { ensureScene, getEntries, getLabel } = useDictionary();
   const params = useParams();
   const categoryId = params.id as string;
+
+  useEffect(() => {
+    void ensureScene("category-admin");
+  }, [ensureScene]);
+
+  const categoryStatusEntries = getEntries("META_CATEGORY_STATUS");
 
   const [selectedKey, setSelectedKey] = useState<React.Key>("");
   const [selectedNode, setSelectedNode] = useState<
@@ -151,7 +188,7 @@ const CategoryManagementPage: React.FC = () => {
           isLeaf: !s.hasChildren,
           dataRef: ref,
           level,
-          icon: getStatusIcon(s.status),
+          icon: getStatusIcon(s.status, categoryStatusEntries),
         };
       });
       setTreeData(nodes);
@@ -189,7 +226,7 @@ const CategoryManagementPage: React.FC = () => {
           isLeaf: !c.hasChildren,
           dataRef: ref,
           level: childLevel,
-          icon: getStatusIcon(c.status),
+          icon: getStatusIcon(c.status, categoryStatusEntries),
         };
       });
 
@@ -347,7 +384,7 @@ const CategoryManagementPage: React.FC = () => {
             },
             level: childLevel,
             isLeaf: childLevel === "commodity" || childLevel === "item",
-            icon: getStatusIcon("CREATED"),
+            icon: getStatusIcon("CREATED", categoryStatusEntries),
           };
 
           setTreeData((origin) =>
@@ -475,7 +512,7 @@ const CategoryManagementPage: React.FC = () => {
         sort: created.sort,
       },
       level,
-      icon: getStatusIcon(created.status),
+      icon: getStatusIcon(created.status, categoryStatusEntries),
     };
 
     if (!created.parentId) {
@@ -601,7 +638,7 @@ const CategoryManagementPage: React.FC = () => {
               }}
               open={drawerVisible}
               getContainer={false}
-              style={{ position: 'absolute' }}
+              rootStyle={{ position: 'absolute' }}
               width="100%"
             >
               {previewLoading ? (
@@ -613,11 +650,22 @@ const CategoryManagementPage: React.FC = () => {
                   <Descriptions column={1} bordered size="small">
                     <Descriptions.Item label="分类编码">{previewDetail.code || "-"}</Descriptions.Item>
                     <Descriptions.Item label="分类名称">{previewDetail.latestVersion?.name || "-"}</Descriptions.Item>
-                    <Descriptions.Item label="业务领域">{previewDetail.businessDomain || "-"}</Descriptions.Item>
-                    <Descriptions.Item label="分类状态">{previewDetail.status || "-"}</Descriptions.Item>
+                    <Descriptions.Item label="业务领域">
+                      {getLabel("META_CATEGORY_BUSINESS_DOMAIN", previewDetail.businessDomain, {
+                        fallback: previewDetail.businessDomain || "-",
+                      })}
+                    </Descriptions.Item>
+                    <Descriptions.Item label="分类状态">
+                      {getLabel("META_CATEGORY_STATUS", previewDetail.status, {
+                        matchDbValue: true,
+                        fallback: previewDetail.status || "-",
+                      })}
+                    </Descriptions.Item>
                     <Descriptions.Item label="上级分类">{previewDetail.parentCode ? `${previewDetail.parentCode} - ${previewDetail.parentName || ""}` : "-"}</Descriptions.Item>
                     <Descriptions.Item label="根分类">{previewDetail.rootCode ? `${previewDetail.rootCode} - ${previewDetail.rootName || ""}` : "-"}</Descriptions.Item>
-                    <Descriptions.Item label="详细信息">{previewDetail.description || "暂无描述"}</Descriptions.Item>
+                    <Descriptions.Item label="详细信息">
+                      {deltaJsonToPlainText(previewDetail.description) || "暂无描述"}
+                    </Descriptions.Item>
                     <Descriptions.Item label="创建人">{previewDetail.createdBy || "-"}</Descriptions.Item>
                     <Descriptions.Item label="创建时间">{previewDetail.createdAt ? new Date(previewDetail.createdAt).toLocaleString() : "-"}</Descriptions.Item>
                     <Descriptions.Item label="修改人">{previewDetail.modifiedBy || "-"}</Descriptions.Item>
@@ -634,7 +682,7 @@ const CategoryManagementPage: React.FC = () => {
                             v{v.versionNo} {v.latest ? "(当前)" : ""}
                           </div>
                           <div>名称: {v.name || "-"}</div>
-                          <div>描述: {v.description || "-"}</div>
+                          <div>描述: {deltaJsonToPlainText(v.description) || "-"}</div>
                           <div>修改人: {v.updatedBy || "-"}</div>
                           <div>修改时间: {v.versionDate ? new Date(v.versionDate).toLocaleString() : "-"}</div>
                         </div>
