@@ -23,6 +23,7 @@ import {
   FileUploadOutlined,
   FileDownloadOutlined,
 } from "@mui/icons-material";
+import { semanticStatusColors } from "@/styles/colors";
 
 interface AdminCategoryTreeProps extends CategoryTreeProps {
   onMenuClick?: (key: string, node: DataNode) => void;
@@ -137,7 +138,20 @@ const AdminCategoryTree: React.FC<AdminCategoryTreeProps> = ({
         icon: <SwapOutlined />,
         children: transitionTargets.map((status) => ({
           key: `status:${status}`,
-          label: statusActionLabel[status],
+          label: (
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+              <span
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: "50%",
+                  backgroundColor: semanticStatusColors[status],
+                  display: "inline-block",
+                }}
+              />
+              {statusActionLabel[status]}
+            </span>
+          ),
         })),
       },
       { type: "divider" },

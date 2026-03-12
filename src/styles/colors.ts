@@ -1,4 +1,5 @@
 export type ThemeMode = 'light' | 'dark';
+export type SemanticStatus = 'CREATED' | 'EFFECTIVE' | 'INVALID';
 
 export interface AppPalette {
   mode: ThemeMode;
@@ -71,3 +72,9 @@ export const darkPalette: AppPalette = {
 
 export const getPalette = (mode: ThemeMode): AppPalette =>
   mode === 'dark' ? darkPalette : lightPalette;
+
+export const semanticStatusColors: Record<SemanticStatus, string> = { // 语义化状态颜色配置
+  CREATED: '#faad14', // 待生效（黄色）
+  EFFECTIVE: '#52c41a', // 生效（绿色）
+  INVALID: '#ff4d4f', // 失效（红色）
+};
