@@ -55,6 +55,14 @@ export interface UpdateCategoryRequestDto {
   sort?: number;
 }
 
+export interface PatchCategoryRequestDto {
+  name?: string;
+  parentId?: string | null;
+  status?: 'CREATED' | 'EFFECTIVE' | 'INVALID';
+  description?: string;
+  sort?: number;
+}
+
 export interface MetaCategoryVersionDto {
   versionNo: number;
   versionDate: string;
@@ -183,6 +191,18 @@ export const metaCategoryApi = {
     options?: { operator?: string },
   ): Promise<MetaCategoryDetailDto> {
     return request.put(`${CATEGORY_BASE}/${encodeURIComponent(id)}`, data, {
+      params: {
+        operator: options?.operator || 'admin',
+      },
+    });
+  },
+
+  patchCategory(
+    id: string,
+    data: PatchCategoryRequestDto,
+    options?: { operator?: string },
+  ): Promise<MetaCategoryDetailDto> {
+    return request.patch(`${CATEGORY_BASE}/${encodeURIComponent(id)}`, data, {
       params: {
         operator: options?.operator || 'admin',
       },

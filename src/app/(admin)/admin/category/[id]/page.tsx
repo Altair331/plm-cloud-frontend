@@ -148,6 +148,13 @@ const deltaJsonToPlainText = (input?: string | null) => {
   }
 };
 
+const toSemanticCategoryStatus = (status?: string): "CREATED" | "EFFECTIVE" | "INVALID" => {
+  const normalized = String(status || "").toUpperCase();
+  if (normalized === "EFFECTIVE" || normalized === "ACTIVE") return "EFFECTIVE";
+  if (normalized === "INVALID" || normalized === "INACTIVE") return "INVALID";
+  return "CREATED";
+};
+
 const CategoryManagementPage: React.FC = () => {
   const { message: messageApi, modal } = App.useApp();
   const { token } = theme.useToken();
@@ -534,6 +541,106 @@ const CategoryManagementPage: React.FC = () => {
           messageApi.success("子分类已新增");
           return Promise.resolve();
         },
+      });
+      return;
+    }
+
+    if (key.startsWith("status:")) {
+      const targetStatus = key.replace("status:", "") as "CREATED" | "EFFECTIVE" | "INVALID";
+      const applyStatusTransition = async () => {
+        const id = String(node.key);
+        if (id.startsWith("local_")) {
+          messageApi.warning("本地临时节点暂不支持状态转换，请保存后再操作");
+          return;
+        }
+
+        const currentStatus = toSemanticCategoryStatus((node.dataRef as any)?.status);
+        if (currentStatus === targetStatus) {
+          messageApi.info("当前已是目标状态");
+          return;
+        }
+
+        try {
+          const updated = await metaCategoryApi.patchCategory(
+            id,
+            { status: targetStatus },
+            { operator: "admin" },
+          );
+
+          setTreeData((origin) =>
+            updateNodeInTree(origin, id, (targetNode) => {
+              const nextName = updated.latestVersion?.name || targetNode.dataRef?.name || "未命名分类";
+              return {
+                ...targetNode,
+                title: `${updated.code} - ${nextName}`,
+                icon: getStatusIcon(updated.status, categoryStatusEntries),
+                dataRef: targetNode.dataRef
+                  ? {
+                      ...targetNode.dataRef,
+                      status: updated.status,
+                      name: nextName,
+                    }
+                  : targetNode.dataRef,
+              };
+            }),
+          );
+
+          if (selectedKey === id) {
+            setSelectedNode((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    title: `${updated.code} - ${updated.latestVersion?.name || prev.dataRef?.name || "未命名分类"}`,
+                    icon: getStatusIcon(updated.status, categoryStatusEntries),
+                    dataRef: prev.dataRef
+                      ? {
+                          ...prev.dataRef,
+                          status: updated.status,
+                          name: updated.latestVersion?.name || prev.dataRef.name,
+                        }
+                      : prev.dataRef,
+                  }
+                : prev,
+            );
+          }
+
+          if (previewNode && String(previewNode.key) === id) {
+            setPreviewNode((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    icon: getStatusIcon(updated.status, categoryStatusEntries),
+                    dataRef: prev.dataRef
+                      ? {
+                          ...prev.dataRef,
+                          status: updated.status,
+                          name: updated.latestVersion?.name || prev.dataRef.name,
+                        }
+                      : prev.dataRef,
+                  }
+                : prev,
+            );
+          }
+
+          if (previewDetail?.id === id) {
+            setPreviewDetail(updated);
+            if (previewEditing) {
+              previewForm.setFieldsValue({
+                ...previewForm.getFieldsValue(true),
+                status: resolveStatusSemantic(updated.status, categoryStatusEntries),
+              });
+            }
+          }
+
+          messageApi.success("状态转换成功");
+        } catch (e: any) {
+          const msg = e?.message || e?.error || "状态转换失败";
+          messageApi.error(msg);
+        }
+      };
+
+      checkPreviewUnsaved(() => {
+        void applyStatusTransition();
       });
       return;
     }

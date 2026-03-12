@@ -8,6 +8,7 @@ import {
   DeleteOutlined,
   SettingOutlined,
   InfoCircleOutlined,
+  SwapOutlined,
 } from "@ant-design/icons";
 import CategoryTree, {
   CategoryTreeProps,
@@ -36,6 +37,21 @@ interface AdminCategoryTreeProps extends CategoryTreeProps {
     } | null,
   ) => void;
 }
+
+type CategorySemanticStatus = "CREATED" | "EFFECTIVE" | "INVALID";
+
+const normalizeCategoryStatus = (status?: string): CategorySemanticStatus => {
+  const normalized = String(status || "").toUpperCase();
+  if (normalized === "EFFECTIVE" || normalized === "ACTIVE") return "EFFECTIVE";
+  if (normalized === "INVALID" || normalized === "INACTIVE") return "INVALID";
+  return "CREATED";
+};
+
+const statusActionLabel: Record<CategorySemanticStatus, string> = {
+  CREATED: "转草稿",
+  EFFECTIVE: "转生效",
+  INVALID: "转失效",
+};
 
 const AdminCategoryTree: React.FC<AdminCategoryTreeProps> = ({
   onMenuClick,
@@ -97,6 +113,9 @@ const AdminCategoryTree: React.FC<AdminCategoryTreeProps> = ({
           ? node.title
           : String(node.key);
     const levelText = nodeRef?.level ? `L${nodeRef.level}` : "-";
+    const currentStatus = normalizeCategoryStatus((node as any)?.dataRef?.status);
+    const transitionTargets = (["CREATED", "EFFECTIVE", "INVALID"] as CategorySemanticStatus[])
+      .filter((status) => status !== currentStatus);
 
     const items: MenuProps["items"] = [
       {
@@ -112,6 +131,15 @@ const AdminCategoryTree: React.FC<AdminCategoryTreeProps> = ({
       { type: "divider" },
       { key: "add", label: "新增子分类", icon: <PlusOutlined /> },
       { key: "rename", label: "重命名", icon: <EditOutlined /> },
+      {
+        key: "status-transition",
+        label: "状态转换",
+        icon: <SwapOutlined />,
+        children: transitionTargets.map((status) => ({
+          key: `status:${status}`,
+          label: statusActionLabel[status],
+        })),
+      },
       { type: "divider" },
       {
         key: "basic-info",
