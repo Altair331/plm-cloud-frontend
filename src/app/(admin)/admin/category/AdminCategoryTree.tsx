@@ -154,7 +154,7 @@ const AdminCategoryTree: React.FC<AdminCategoryTreeProps> = ({
           name?: string;
           level?: number;
           path?: string;
-          taxonomy?: string;
+          businessDomain?: string;
         }
       | undefined;
 
@@ -176,7 +176,7 @@ const AdminCategoryTree: React.FC<AdminCategoryTreeProps> = ({
     if (!nodeRef?.id) return;
 
     metaCategoryApi
-      .getNodePath(nodeRef.id, nodeRef.taxonomy || "UNSPSC")
+      .getNodePath(nodeRef.id, nodeRef.businessDomain || "MATERIAL")
       .then((pathNodes) => {
         const rootNode = pathNodes?.[0];
         if (!rootNode) return;

@@ -52,7 +52,7 @@ const CategoryBrowser: React.FC<CategoryBrowserProps> = ({ onSelect }) => {
     const run = async () => {
       setGroupsLoading(true);
       try {
-        const resp = await metaCategoryApi.listNodes({ taxonomy: 'UNSPSC', level: 1, page: 0, size: 200 });
+        const resp = await metaCategoryApi.listNodes({ businessDomain: 'MATERIAL', level: 1, page: 0, size: 200 });
         if (cancelled) return;
         const nextGroups = (resp.content || []).map(mapBrowseNodeToMillerNode);
         setGroups(nextGroups);
@@ -81,7 +81,7 @@ const CategoryBrowser: React.FC<CategoryBrowserProps> = ({ onSelect }) => {
       setSelectedLeaf(null);
       try {
         const resp = await metaCategoryApi.listNodes({
-          taxonomy: 'UNSPSC',
+          businessDomain: 'MATERIAL',
           parentId: activeGroupKey,
           page: 0,
           size: 200,
@@ -114,7 +114,7 @@ const CategoryBrowser: React.FC<CategoryBrowserProps> = ({ onSelect }) => {
       setClassGroups([]);
       try {
         const resp = await metaCategoryApi.listNodes({
-          taxonomy: 'UNSPSC',
+          businessDomain: 'MATERIAL',
           parentId: activeScope.key,
           page: 0,
           size: 200,
@@ -128,7 +128,7 @@ const CategoryBrowser: React.FC<CategoryBrowserProps> = ({ onSelect }) => {
               return { clazz: child, commodities: [] };
             }
             const sub = await metaCategoryApi.listNodes({
-              taxonomy: 'UNSPSC',
+              businessDomain: 'MATERIAL',
               parentId: child.id,
               page: 0,
               size: 200,

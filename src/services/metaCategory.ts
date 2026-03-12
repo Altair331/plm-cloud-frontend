@@ -10,7 +10,7 @@ export interface PageResponse<T> {
 
 export interface MetaCategoryNodeDto {
   id: string;
-  taxonomy: string;
+  businessDomain: string;
   code: string;
   name: string;
   level?: number;
@@ -31,21 +31,9 @@ export interface MetaCategorySearchItemDto {
 }
 
 export interface MetaCategoryChildrenBatchRequestDto {
-  taxonomy: string;
+  businessDomain: string;
   parentIds: string[];
   status?: string;
-}
-
-export interface MetaTaxonomyLevelConfigDto {
-  level: number;
-  displayName: string;
-}
-
-export interface MetaTaxonomyDto {
-  code: string;
-  name: string;
-  status: string;
-  levelConfigs: MetaTaxonomyLevelConfigDto[];
 }
 
 export interface CreateCategoryRequestDto {
@@ -110,11 +98,10 @@ export interface MetaCategoryDetailDto {
 }
 
 const CATEGORY_BASE = '/api/meta/categories';
-const TAXONOMY_BASE = '/api/meta/taxonomies';
 
 export const metaCategoryApi = {
   listNodes(params: {
-    taxonomy: string;
+    businessDomain: string;
     parentId?: string;
     level?: number;
     keyword?: string;
@@ -125,14 +112,14 @@ export const metaCategoryApi = {
     return request.get(`${CATEGORY_BASE}/nodes`, { params });
   },
 
-  getNodePath(id: string, taxonomy: string): Promise<MetaCategoryNodeDto[]> {
+  getNodePath(id: string, businessDomain: string): Promise<MetaCategoryNodeDto[]> {
     return request.get(`${CATEGORY_BASE}/nodes/${encodeURIComponent(id)}/path`, {
-      params: { taxonomy },
+      params: { businessDomain },
     });
   },
 
   search(params: {
-    taxonomy: string;
+    businessDomain: string;
     keyword: string;
     scopeNodeId?: string;
     maxDepth?: number;
@@ -145,10 +132,6 @@ export const metaCategoryApi = {
 
   listChildrenBatch(data: MetaCategoryChildrenBatchRequestDto): Promise<Record<string, MetaCategoryNodeDto[]>> {
     return request.post(`${CATEGORY_BASE}/nodes:children-batch`, data);
-  },
-
-  getTaxonomy(code: string): Promise<MetaTaxonomyDto> {
-    return request.get(`${TAXONOMY_BASE}/${encodeURIComponent(code)}`);
   },
 
   createCategory(

@@ -212,7 +212,7 @@ const CategoryManagementPage: React.FC = () => {
 
   const loadSegments = async () => {
     try {
-      const page = await metaCategoryApi.listNodes({ taxonomy: "UNSPSC", level: 1, status: "ALL", page: 0, size: 200 });
+      const page = await metaCategoryApi.listNodes({ businessDomain: "MATERIAL", level: 1, status: "ALL", page: 0, size: 200 });
       const nodes: CategoryTreeNode[] = (Array.isArray(page.content) ? page.content : []).map((s) => {
         const ref: CategoryNodeRef = {
           ...s,
@@ -244,7 +244,7 @@ const CategoryManagementPage: React.FC = () => {
 
     try {
       const page = await metaCategoryApi.listNodes({
-        taxonomy: "UNSPSC",
+        businessDomain: "MATERIAL",
         parentId: String(key),
         status: "ALL",
         page: 0,
@@ -436,7 +436,7 @@ const CategoryManagementPage: React.FC = () => {
             title: `${localCode} - ${trimmed}`,
             dataRef: {
               id: `local_${childLevel}_${Date.now()}`,
-              taxonomy: "UNSPSC",
+              businessDomain: "MATERIAL",
               key: `local_${childLevel}_${Date.now()}`,
               code: localCode,
               name: trimmed,
@@ -563,7 +563,7 @@ const CategoryManagementPage: React.FC = () => {
       isLeaf: true,
       dataRef: {
         id: created.id,
-        taxonomy: "UNSPSC",
+        businessDomain: created.businessDomain || "MATERIAL",
         code: created.code,
         name,
         level: levelNumber,
