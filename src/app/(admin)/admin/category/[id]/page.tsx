@@ -26,6 +26,17 @@ import { useParams } from "next/navigation";
 const ReactQuill = dynamic(() => import("react-quill-new"), { ssr: false });
 const EMPTY_QUILL_DELTA_JSON = '{"ops":[{"insert":"\\n"}]}'
 
+const normalizeDeltaJson = (value?: string) => {
+  if (!value || typeof value !== "string") {
+    return EMPTY_QUILL_DELTA_JSON;
+  }
+  try {
+    return JSON.stringify(JSON.parse(value));
+  } catch {
+    return value;
+  }
+};
+
 const quillModules = {
   toolbar: [
     [{ header: [1, 2, 3, false] }],
@@ -163,6 +174,8 @@ const CategoryManagementPage: React.FC = () => {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewEditing, setPreviewEditing] = useState(false);
   const [previewSaving, setPreviewSaving] = useState(false);
+  const [renameGuidedEdit, setRenameGuidedEdit] = useState(false);
+  const [previewEditBaseline, setPreviewEditBaseline] = useState("");
   const [previewForm] = Form.useForm();
 
   const [treeData, setTreeData] = useState<CategoryTreeNode[]>([]);
@@ -347,7 +360,16 @@ const CategoryManagementPage: React.FC = () => {
   };
 
   const checkPreviewUnsaved = (onConfirm: () => void) => {
-    if (previewEditing && previewForm.isFieldsTouched()) {
+    const currentValues = previewForm.getFieldsValue(true);
+    const currentSnapshot = JSON.stringify({
+      name: currentValues?.name || "",
+      businessDomain: currentValues?.businessDomain || "",
+      status: currentValues?.status || "",
+      description: normalizeDeltaJson(currentValues?.description || EMPTY_QUILL_DELTA_JSON),
+    });
+    const hasRealChanges = previewEditing && !!previewEditBaseline && currentSnapshot !== previewEditBaseline;
+
+    if (hasRealChanges) {
       modal.confirm({
         title: "放弃修改确认",
         content: "检测到分类详细信息存在未保存的修改，放弃或离开后将丢失这些内容，是否继续？",
@@ -356,45 +378,92 @@ const CategoryManagementPage: React.FC = () => {
         okType: "danger",
         onOk: () => {
           previewForm.resetFields();
+          setPreviewEditBaseline("");
           onConfirm();
         },
       });
     } else {
+      setPreviewEditBaseline("");
       onConfirm();
     }
   };
 
-  const handleMenuClick = (key: string, node: CategoryTreeNode) => {
-    if (key === "basic-info") {
-      const loadNodeInfo = () => {
-        setPreviewNode(node);
-        setDrawerVisible(true);
-        const id = String(node.key);
-        if (id.startsWith("local_")) {
-          setPreviewDetail(null);
-          messageApi.warning("本地临时节点暂无完整详情，请保存后查看");
-          return;
+  const openPreviewDetail = (
+    node: CategoryTreeNode,
+    startEdit = false,
+    options?: { openAfterDataReady?: boolean },
+  ) => {
+    setPreviewNode(node);
+    const id = String(node.key);
+    const openAfterDataReady = !!options?.openAfterDataReady;
+
+    if (!openAfterDataReady) {
+      setDrawerVisible(true);
+    }
+
+    if (id.startsWith("local_")) {
+      setPreviewDetail(null);
+      setPreviewEditing(false);
+      setRenameGuidedEdit(false);
+      previewForm.resetFields();
+      messageApi.warning(
+        startEdit
+          ? "本地临时节点暂不支持重命名，请保存后在详情页编辑"
+          : "本地临时节点暂无完整详情，请保存后查看",
+      );
+      return;
+    }
+
+    setPreviewLoading(true);
+    metaCategoryApi
+      .getCategoryDetail(id)
+      .then((detail) => {
+        setPreviewDetail(detail);
+
+        if (startEdit) {
+          setRenameGuidedEdit(true);
+          const initialValues = {
+            name: detail.latestVersion?.name || "",
+            businessDomain: detail.businessDomain,
+            status: resolveStatusSemantic(detail.status, categoryStatusEntries),
+            description: detail.description || EMPTY_QUILL_DELTA_JSON,
+          };
+          previewForm.setFieldsValue(initialValues);
+          setPreviewEditBaseline(JSON.stringify({
+            name: initialValues.name || "",
+            businessDomain: initialValues.businessDomain || "",
+            status: initialValues.status || "",
+            description: normalizeDeltaJson(initialValues.description || EMPTY_QUILL_DELTA_JSON),
+          }));
+          setPreviewEditing(true);
+        } else {
+          setPreviewEditing(false);
+          setRenameGuidedEdit(false);
+          setPreviewEditBaseline("");
+          previewForm.resetFields();
         }
 
-        setPreviewLoading(true);
-        metaCategoryApi
-          .getCategoryDetail(id)
-          .then((detail) => {
-            setPreviewDetail(detail);
-            setPreviewEditing(false);
-            previewForm.resetFields();
-          })
-          .catch((e) => {
-            console.error(e);
-            setPreviewDetail(null);
-            messageApi.error("加载分类详情失败");
-          })
-          .finally(() => {
-            setPreviewLoading(false);
-          });
-      };
+        if (openAfterDataReady) {
+          setDrawerVisible(true);
+        }
+      })
+      .catch((e) => {
+        console.error(e);
+        setPreviewDetail(null);
+        setPreviewEditing(false);
+        setRenameGuidedEdit(false);
+        setPreviewEditBaseline("");
+        previewForm.resetFields();
+        messageApi.error("加载分类详情失败");
+      })
+      .finally(() => {
+        setPreviewLoading(false);
+      });
+  };
 
-      checkPreviewUnsaved(loadNodeInfo);
+  const handleMenuClick = (key: string, node: CategoryTreeNode) => {
+    if (key === "basic-info") {
+      checkPreviewUnsaved(() => openPreviewDetail(node, false));
       return;
     }
 
@@ -470,57 +539,7 @@ const CategoryManagementPage: React.FC = () => {
     }
 
     if (key === "rename") {
-      let inputValue = node.dataRef?.title ?? "";
-      modal.confirm({
-        title: "重命名分类",
-        content: (
-          <Input
-            defaultValue={inputValue}
-            placeholder="请输入新的分类名称"
-            onChange={(e) => {
-              inputValue = e.target.value;
-            }}
-          />
-        ),
-        okText: "确认",
-        cancelText: "取消",
-        onOk: () => {
-          const trimmed = inputValue.trim();
-          if (!trimmed) {
-            messageApi.warning("分类名称不能为空");
-            return Promise.reject();
-          }
-
-          setTreeData((origin) =>
-            updateNodeInTree(origin, node.key, (targetNode) => {
-              const code = targetNode.dataRef?.code || "LOCAL";
-              return {
-                ...targetNode,
-                title: `${code} - ${trimmed}`,
-                dataRef: targetNode.dataRef
-                  ? { ...targetNode.dataRef, name: trimmed, title: trimmed }
-                  : targetNode.dataRef,
-              };
-            }),
-          );
-
-          if (selectedKey === node.key && selectedNode) {
-            setSelectedNode((prev) =>
-              prev
-                ? {
-                    ...prev,
-                    title: `${prev.dataRef?.code || "LOCAL"} - ${trimmed}`,
-                    dataRef: prev.dataRef
-                      ? { ...prev.dataRef, name: trimmed, title: trimmed }
-                      : prev.dataRef,
-                  }
-                : prev,
-            );
-          }
-          messageApi.success("重命名成功");
-          return Promise.resolve();
-        },
-      });
+      checkPreviewUnsaved(() => openPreviewDetail(node, true, { openAfterDataReady: true }));
       return;
     }
 
@@ -610,12 +629,20 @@ const CategoryManagementPage: React.FC = () => {
 
   const handleStartPreviewEdit = () => {
     if (!previewDetail) return;
-    previewForm.setFieldsValue({
+    setRenameGuidedEdit(false);
+    const initialValues = {
       name: previewDetail.latestVersion?.name || "",
       businessDomain: previewDetail.businessDomain,
       status: resolveStatusSemantic(previewDetail.status, categoryStatusEntries),
       description: previewDetail.description || EMPTY_QUILL_DELTA_JSON,
-    });
+    };
+    previewForm.setFieldsValue(initialValues);
+    setPreviewEditBaseline(JSON.stringify({
+      name: initialValues.name || "",
+      businessDomain: initialValues.businessDomain || "",
+      status: initialValues.status || "",
+      description: normalizeDeltaJson(initialValues.description || EMPTY_QUILL_DELTA_JSON),
+    }));
     setPreviewEditing(true);
   };
 
@@ -639,6 +666,8 @@ const CategoryManagementPage: React.FC = () => {
 
       setPreviewDetail(updated);
       setPreviewEditing(false);
+      setRenameGuidedEdit(false);
+      setPreviewEditBaseline("");
       previewForm.resetFields();
 
       setTreeData((origin) =>
@@ -776,7 +805,11 @@ const CategoryManagementPage: React.FC = () => {
                 previewDetail ? (
                   previewEditing ? (
                     <Space>
-                      <Button onClick={() => checkPreviewUnsaved(() => setPreviewEditing(false))}>取消</Button>
+                      <Button onClick={() => checkPreviewUnsaved(() => {
+                        setPreviewEditing(false);
+                        setRenameGuidedEdit(false);
+                        setPreviewEditBaseline("");
+                      })}>取消</Button>
                       <Button type="primary" loading={previewSaving} onClick={handleSavePreviewEdit}>
                         保存
                       </Button>
@@ -791,6 +824,8 @@ const CategoryManagementPage: React.FC = () => {
                   setDrawerVisible(false);
                   setPreviewDetail(null);
                   setPreviewEditing(false);
+                  setRenameGuidedEdit(false);
+                  setPreviewEditBaseline("");
                 });
               }}
               open={drawerVisible}
@@ -838,7 +873,11 @@ const CategoryManagementPage: React.FC = () => {
                                   </Col>
                                   <Col span={12}>
                                     <Form.Item label="分类名称" name="name" rules={[{ required: true, message: "请输入分类名称" }]}>
-                                      <Input placeholder="请输入分类名称" />
+                                      <Input
+                                        autoFocus={renameGuidedEdit}
+                                        placeholder="请输入分类名称"
+                                        style={renameGuidedEdit ? { borderColor: token.colorInfo, boxShadow: `0 0 0 2px ${token.colorInfoBg}` } : undefined}
+                                      />
                                     </Form.Item>
                                   </Col>
                                 </Row>
