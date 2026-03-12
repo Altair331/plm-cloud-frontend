@@ -7,7 +7,8 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import Delta from "quill-delta";
-import { Modal, Descriptions, Space, Typography, Divider, Spin, Alert, Table, Card, Tag } from "antd";
+import { Space, Typography, Divider, Spin, Alert, Table } from "antd";
+import DraggableModal from "@/components/DraggableModal";
 import { metaCategoryApi, type MetaCategoryVersionCompareDto } from "@/services/metaCategory";
 
 export interface VersionNode {
@@ -107,8 +108,6 @@ const buildDeltaDiffSegments = (baseDescription?: string, targetDescription?: st
     leftSegments,
     rightSegments,
     hasMeaningfulDiff,
-    baseText: toPlainText(baseDelta),
-    targetText: toPlainText(targetDelta),
   };
 };
 
@@ -192,6 +191,57 @@ const VersionGraph: React.FC<VersionGraphProps> = ({ categoryId, versions = [] }
       compareData.targetVersion?.description,
     );
   }, [compareData]);
+
+  const compareRows = useMemo(() => {
+    if (!compareData) {
+      return [] as Array<{
+        key: string;
+        field: string;
+        rowType: "text" | "delta";
+        baseValue: React.ReactNode;
+        targetValue: React.ReactNode;
+        isChanged: boolean;
+      }>;
+    }
+
+    const baseName = compareData.baseVersion?.name || "";
+    const targetName = compareData.targetVersion?.name || "";
+
+    const rows: Array<{
+      key: string;
+      field: string;
+      rowType: "text" | "delta";
+      baseValue: React.ReactNode;
+      targetValue: React.ReactNode;
+      isChanged: boolean;
+    }> = [
+      {
+        key: "name",
+        field: "分类名称",
+        rowType: "text",
+        baseValue: baseName || "-",
+        targetValue: targetName || "-",
+        isChanged: baseName !== targetName,
+      },
+    ];
+
+    if (descriptionDiff) {
+      rows.push({
+        key: "description",
+        field: "分类描述",
+        rowType: "delta",
+        baseValue: descriptionDiff.hasMeaningfulDiff
+          ? renderSegments(descriptionDiff.leftSegments)
+          : <Typography.Text type="secondary">内容无变化</Typography.Text>,
+        targetValue: descriptionDiff.hasMeaningfulDiff
+          ? renderSegments(descriptionDiff.rightSegments)
+          : <Typography.Text type="secondary">内容无变化</Typography.Text>,
+        isChanged: descriptionDiff.hasMeaningfulDiff,
+      });
+    }
+
+    return rows.filter((item) => item.key === "description" || item.isChanged);
+  }, [compareData, descriptionDiff]);
 
   const { nodes, edges } = useMemo(() => {
     // 按版本号从小到大排序，从左侧向右侧排布
@@ -326,7 +376,7 @@ const VersionGraph: React.FC<VersionGraphProps> = ({ categoryId, versions = [] }
         {/* <Background gap={16} size={1} /> */}
       </ReactFlow>
 
-      <Modal
+      <DraggableModal
         title={`版本比对：${previousVersion ? `v${previousVersion.versionNo} -> ` : ''}v${selectedVersion?.versionNo}`}
         open={isModalOpen}
         onCancel={() => {
@@ -336,10 +386,11 @@ const VersionGraph: React.FC<VersionGraphProps> = ({ categoryId, versions = [] }
           setCompareError(null);
         }}
         footer={null}
-        width={700}
+        width={960}
+        destroyOnClose
       >
         <Space orientation="vertical" style={{ width: '100%', marginTop: 16 }}>
-          <Divider style={{ margin: '0 0 12px 0' }}>详情变更</Divider>
+          <Divider style={{ margin: '0 0 12px 0' }}>差异内容（Git Diff 视图）</Divider>
 
           {compareLoading ? (
             <div style={{ height: 120, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -348,22 +399,30 @@ const VersionGraph: React.FC<VersionGraphProps> = ({ categoryId, versions = [] }
           ) : compareError ? (
             <Alert type="error" showIcon title="版本对比失败" description={compareError} />
           ) : compareData ? (
-            <Space direction="vertical" style={{ width: "100%" }} size={16}>
+            <Space orientation="vertical" style={{ width: "100%" }} size={12}>
               <Table 
                 size="small" 
                 pagination={false} 
                 bordered
-                rowKey="field"
+                style={{ borderRadius: 10, overflow: "hidden" }}
+                rowKey="key"
+                footer={() => <div style={{ height: 0 }} />}
                 columns={[
-                  { title: '属性 / 字段', dataIndex: 'field', width: 120 },
+                  { title: '字段', dataIndex: 'field', width: 120 },
                   { 
                     title: `变更前 (v${compareData.baseVersion?.versionNo})`, 
                     dataIndex: 'baseValue',
                     render: (text, record) => (
                       <div style={{ 
-                        background: record.isChanged ? '#ffebe9' : 'transparent', 
-                        color: record.isChanged ? '#cf222e' : 'inherit',
-                        textDecoration: record.isChanged ? 'line-through' : 'none',
+                        background: record.rowType === 'delta'
+                          ? 'transparent'
+                          : (record.isChanged ? '#ffebe9' : 'transparent'), 
+                        color: record.rowType === 'delta'
+                          ? 'inherit'
+                          : (record.isChanged ? '#cf222e' : 'inherit'),
+                        textDecoration: record.rowType === 'delta'
+                          ? 'none'
+                          : (record.isChanged ? 'line-through' : 'none'),
                         padding: '4px 8px', borderRadius: 4 
                       }}>
                         {text || '-'}
@@ -375,8 +434,12 @@ const VersionGraph: React.FC<VersionGraphProps> = ({ categoryId, versions = [] }
                     dataIndex: 'targetValue',
                     render: (text, record) => (
                       <div style={{ 
-                        background: record.isChanged ? '#dafbe1' : 'transparent', 
-                        color: record.isChanged ? '#1a7f37' : 'inherit',
+                        background: record.rowType === 'delta'
+                          ? 'transparent'
+                          : (record.isChanged ? '#dafbe1' : 'transparent'), 
+                        color: record.rowType === 'delta'
+                          ? 'inherit'
+                          : (record.isChanged ? '#1a7f37' : 'inherit'),
                         padding: '4px 8px', borderRadius: 4 
                       }}>
                         {text || '-'}
@@ -384,67 +447,18 @@ const VersionGraph: React.FC<VersionGraphProps> = ({ categoryId, versions = [] }
                     )
                   },
                 ]}
-                dataSource={[
-                  {
-                    field: '分类名称',
-                    baseValue: compareData.baseVersion?.name,
-                    targetValue: compareData.targetVersion?.name,
-                    isChanged: compareData.diff?.nameChanged
-                  },
-                  // 将未被明确标记为 known 原生字段的差异展示
-                  ...(compareData.diff?.changedFields || [])
-                    .filter(f => !["name", "description"].includes(f))
-                    .map(f => ({
-                       field: f,
-                       baseValue: '（详见版本系统）',
-                       targetValue: '（已发生变更）',
-                       isChanged: true
-                    }))
-                ].filter(item => item.isChanged || item.field === '分类名称')} // 保留基础字段方便查看
+                dataSource={compareRows}
               />
 
-              <Card size="small" title="分类描述（Delta Diff）">
-                {descriptionDiff ? (
-                  descriptionDiff.hasMeaningfulDiff ? (
-                    <Descriptions bordered size="small" column={1}>
-                      <Descriptions.Item label={`变更前 (v${compareData.baseVersion?.versionNo})`}>
-                        {renderSegments(descriptionDiff.leftSegments)}
-                      </Descriptions.Item>
-                      <Descriptions.Item label={`变更后 (v${compareData.targetVersion?.versionNo})`}>
-                        {renderSegments(descriptionDiff.rightSegments)}
-                      </Descriptions.Item>
-                    </Descriptions>
-                  ) : (
-                    <Typography.Text type="secondary">
-                      描述内容无变化
-                    </Typography.Text>
-                  )
-                ) : (
-                  <Typography.Text type="secondary">暂无描述数据</Typography.Text>
-                )}
-              </Card>
-
-              {compareData.diff?.structureChanged && (
-                <Descriptions bordered size="small" column={1}>
-                  <Descriptions.Item label="结构差异路径">
-                    {(compareData.diff?.structureChangedPaths || []).length > 0 ? (
-                      <Space wrap>
-                        {(compareData.diff?.structureChangedPaths || []).map((path) => (
-                          <Tag key={path} color="warning">{path}</Tag>
-                        ))}
-                      </Space>
-                    ) : (
-                      <Typography.Text type="secondary">有结构变化，但无具体路径</Typography.Text>
-                    )}
-                  </Descriptions.Item>
-                </Descriptions>
+              {compareRows.length === 0 && (
+                <Typography.Text type="secondary">当前两个版本无可见业务差异</Typography.Text>
               )}
             </Space>
           ) : (
             <Typography.Text type="secondary">暂无差异数据</Typography.Text>
           )}
         </Space>
-      </Modal>
+      </DraggableModal>
     </div>
   );
 };
