@@ -1,4 +1,4 @@
-import React, { useState, useMemo, forwardRef } from 'react';
+import React, { useState, useMemo, forwardRef, useEffect } from 'react';
 import { Input, Tree, Empty } from 'antd';
 import type { DataNode, TreeProps } from 'antd/es/tree';
 
@@ -57,6 +57,31 @@ const CategoryTree = forwardRef<HTMLDivElement, CategoryTreeProps>(({
   const [autoExpandParent, setAutoExpandParent] = useState(true);
   const [checkableEnabled, setCheckableEnabled] = useState(defaultCheckable);
   const [checkedKeys, setCheckedKeys] = useState<React.Key[]>(defaultCheckedKeys);
+
+  const validTreeKeys = useMemo(() => {
+    const keys = new Set<React.Key>();
+    const collectKeys = (nodes: DataNode[]) => {
+      nodes.forEach((node) => {
+        keys.add(node.key);
+        if (node.children?.length) {
+          collectKeys(node.children);
+        }
+      });
+    };
+
+    collectKeys(treeData);
+    return keys;
+  }, [treeData]);
+
+  const sanitizedCheckedKeys = useMemo(
+    () => checkedKeys.filter((key) => validTreeKeys.has(key)),
+    [checkedKeys, validTreeKeys],
+  );
+
+  useEffect(() => {
+    if (sanitizedCheckedKeys.length === checkedKeys.length) return;
+    setCheckedKeys(sanitizedCheckedKeys);
+  }, [checkedKeys, sanitizedCheckedKeys]);
 
   const onExpand = (newExpandedKeys: React.Key[]) => {
     setExpandedKeys(newExpandedKeys);
@@ -149,8 +174,8 @@ const CategoryTree = forwardRef<HTMLDivElement, CategoryTreeProps>(({
     typeof toolbarRender === 'function'
       ? toolbarRender({
           checkableEnabled,
-          checkedKeys,
-          checkedCount: checkedKeys.length,
+          checkedKeys: sanitizedCheckedKeys,
+          checkedCount: sanitizedCheckedKeys.length,
           searchValue,
           searchExpanded,
           onSearchChange: onChange,
@@ -193,7 +218,7 @@ const CategoryTree = forwardRef<HTMLDivElement, CategoryTreeProps>(({
           <Tree
             key={checkableEnabled ? 'tree-checkable-enabled' : 'tree-checkable-disabled'}
             checkable={checkableEnabled}
-            checkedKeys={checkedKeys}
+            checkedKeys={sanitizedCheckedKeys}
             onCheck={handleCheck}
             onExpand={onExpand}
             expandedKeys={expandedKeys}

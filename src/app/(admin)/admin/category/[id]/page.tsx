@@ -10,6 +10,8 @@ import {
   metaCategoryApi,
   MetaCategoryNodeDto,
   type MetaCategoryDetailDto,
+  type MetaCategoryBatchDeleteResponseDto,
+  type MetaCategoryBatchDeleteResultDto,
 } from "@/services/metaCategory";
 import {
   CheckCircleOutlined,
@@ -155,6 +157,14 @@ const toSemanticCategoryStatus = (status?: string): "CREATED" | "EFFECTIVE" | "I
   return "CREATED";
 };
 
+const CATEGORY_HAS_CHILDREN_ERROR = "CATEGORY_HAS_CHILDREN";
+
+interface CategoryDeleteExecutionResult {
+  deletedIds: string[];
+  cascadeRequiredNodes: CategoryTreeNode[];
+  failedResults: Array<MetaCategoryBatchDeleteResultDto & { node?: CategoryTreeNode }>;
+}
+
 const CategoryManagementPage: React.FC = () => {
   const { message: messageApi, modal } = App.useApp();
   const { token } = theme.useToken();
@@ -226,6 +236,389 @@ const CategoryManagementPage: React.FC = () => {
           children: removeNodeFromTree(node.children, key),
         };
       });
+  };
+
+  const removeNodesFromTree = (
+    list: CategoryTreeNode[],
+    keysToRemove: Set<React.Key>,
+  ): CategoryTreeNode[] => {
+    return list
+      .filter((node) => !keysToRemove.has(node.key))
+      .map((node) => {
+        const nextChildren = node.children
+          ? removeNodesFromTree(node.children, keysToRemove)
+          : node.children;
+
+        if (!node.children) {
+          return node;
+        }
+
+        const normalizedChildren = nextChildren ?? [];
+        const hasChildren = normalizedChildren.length > 0;
+
+        return {
+          ...node,
+          children: normalizedChildren,
+          isLeaf: !hasChildren,
+          dataRef: node.dataRef
+            ? {
+                ...node.dataRef,
+                hasChildren,
+                leaf: !hasChildren,
+              }
+            : node.dataRef,
+        };
+      });
+  };
+
+  const collectNodeKeys = (nodes: CategoryTreeNode[]): Set<React.Key> => {
+    const keySet = new Set<React.Key>();
+    const visit = (items: CategoryTreeNode[]) => {
+      items.forEach((item) => {
+        keySet.add(item.key);
+        if (item.children?.length) {
+          visit(item.children);
+        }
+      });
+    };
+    visit(nodes);
+    return keySet;
+  };
+
+  const buildParentKeyMap = (nodes: CategoryTreeNode[]) => {
+    const parentMap = new Map<React.Key, React.Key | null>();
+    const visit = (items: CategoryTreeNode[], parentKey: React.Key | null = null) => {
+      items.forEach((item) => {
+        parentMap.set(item.key, parentKey);
+        if (item.children?.length) {
+          visit(item.children, item.key);
+        }
+      });
+    };
+    visit(nodes);
+    return parentMap;
+  };
+
+  const isCascadeDeleteError = (error: any) => {
+    const code = typeof error?.code === "string"
+      ? error.code
+      : typeof error?.errorCode === "string"
+        ? error.errorCode
+        : undefined;
+    const message = typeof error?.message === "string" ? error.message : "";
+    return code === CATEGORY_HAS_CHILDREN_ERROR || message.includes("cascade=true&confirm=true");
+  };
+
+  const executeSingleDelete = async (
+    node: CategoryTreeNode,
+    options?: { cascade?: boolean; confirm?: boolean },
+  ): Promise<CategoryDeleteExecutionResult> => {
+    const id = String(node.key);
+    if (id.startsWith("local_")) {
+      return { deletedIds: [id], cascadeRequiredNodes: [], failedResults: [] };
+    }
+
+    try {
+      await metaCategoryApi.deleteCategory(id, {
+        cascade: options?.cascade,
+        confirm: options?.confirm,
+        operator: "admin",
+      });
+      return { deletedIds: [id], cascadeRequiredNodes: [], failedResults: [] };
+    } catch (error: any) {
+      if (!options?.cascade && isCascadeDeleteError(error)) {
+        return { deletedIds: [], cascadeRequiredNodes: [node], failedResults: [] };
+      }
+      throw error;
+    }
+  };
+
+  const mapBatchDeleteResult = (
+    response: MetaCategoryBatchDeleteResponseDto,
+    nodeMap: Map<string, CategoryTreeNode>,
+  ): CategoryDeleteExecutionResult => {
+    const deletedIds: string[] = [];
+    const cascadeRequiredNodes: CategoryTreeNode[] = [];
+    const failedResults: Array<MetaCategoryBatchDeleteResultDto & { node?: CategoryTreeNode }> = [];
+
+    response.results.forEach((result) => {
+      const node = nodeMap.get(result.id);
+      if (result.success) {
+        deletedIds.push(result.id);
+        return;
+      }
+
+      if (result.code === CATEGORY_HAS_CHILDREN_ERROR && node) {
+        cascadeRequiredNodes.push(node);
+        return;
+      }
+
+      failedResults.push({ ...result, node });
+    });
+
+    return { deletedIds, cascadeRequiredNodes, failedResults };
+  };
+
+  const executeBatchDelete = async (
+    nodes: CategoryTreeNode[],
+    options?: { cascade?: boolean; confirm?: boolean },
+  ): Promise<CategoryDeleteExecutionResult> => {
+    if (!nodes.length) {
+      return { deletedIds: [], cascadeRequiredNodes: [], failedResults: [] };
+    }
+
+    const deletedIds: string[] = [];
+    const remoteIds: string[] = [];
+    const nodeMap = new Map<string, CategoryTreeNode>();
+
+    nodes.forEach((node) => {
+      const id = String(node.key);
+      nodeMap.set(id, node);
+      if (id.startsWith("local_")) {
+        deletedIds.push(id);
+      } else {
+        remoteIds.push(id);
+      }
+    });
+
+    if (!remoteIds.length) {
+      return { deletedIds, cascadeRequiredNodes: [], failedResults: [] };
+    }
+
+    const response = await metaCategoryApi.batchDeleteCategories({
+      ids: remoteIds,
+      cascade: options?.cascade ?? false,
+      confirm: options?.confirm ?? false,
+      atomic: false,
+      dryRun: false,
+      operator: "admin",
+    });
+
+    const mapped = mapBatchDeleteResult(response, nodeMap);
+    return {
+      deletedIds: [...deletedIds, ...mapped.deletedIds],
+      cascadeRequiredNodes: mapped.cascadeRequiredNodes,
+      failedResults: mapped.failedResults,
+    };
+  };
+
+  const summarizeNodeNames = (nodes: CategoryTreeNode[], max = 5) => {
+    const names = nodes
+      .slice(0, max)
+      .map((node) => node.dataRef?.name || String(node.title || node.key));
+
+    return nodes.length > max ? `${names.join("、")} 等 ${nodes.length} 个分类` : names.join("、");
+  };
+
+  const summarizeFailureResults = (
+    failedResults: Array<MetaCategoryBatchDeleteResultDto & { node?: CategoryTreeNode }>,
+    max = 3,
+  ) => {
+    const parts = failedResults.slice(0, max).map((result) => {
+      const name = result.node?.dataRef?.name || result.id;
+      return `${name}${result.message ? `：${result.message}` : ""}`;
+    });
+
+    return failedResults.length > max
+      ? `${parts.join("；")}；其余 ${failedResults.length - max} 项删除失败`
+      : parts.join("；");
+  };
+
+  const notifyBatchDeleteOutcome = (
+    deletedCount: number,
+    failedResults: Array<MetaCategoryBatchDeleteResultDto & { node?: CategoryTreeNode }>,
+    successMessage = "批量删除成功",
+  ) => {
+    if (!failedResults.length) {
+      if (deletedCount > 0) {
+        messageApi.success(successMessage);
+      }
+      return;
+    }
+
+    const summary = summarizeFailureResults(failedResults);
+    if (deletedCount > 0) {
+      messageApi.warning(`部分分类删除失败：${summary}`);
+      return;
+    }
+
+    messageApi.error(`批量删除失败：${summary}`);
+  };
+
+  const applyDeletedNodes = (deletedKeys: React.Key[]) => {
+    if (!deletedKeys.length) return;
+
+    const deletedKeySet = new Set<React.Key>(deletedKeys);
+    setTreeData((origin) => removeNodesFromTree(origin, deletedKeySet));
+
+    if (selectedKey && deletedKeySet.has(selectedKey)) {
+      setSelectedKey("");
+      setSelectedNode(undefined);
+    }
+
+    if (previewNode && deletedKeySet.has(previewNode.key)) {
+      setDrawerVisible(false);
+      setPreviewNode(undefined);
+      setPreviewDetail(null);
+      setPreviewEditing(false);
+      setRenameGuidedEdit(false);
+      setPreviewEditBaseline("");
+      setPreviewEditCurrent("");
+      setPendingPreviewFormValues(null);
+    }
+  };
+
+  const runSingleDeleteFlow = (node: CategoryTreeNode) => {
+    const summaryText = summarizeNodeNames([node], 1);
+
+    modal.confirm({
+      title: "确认删除",
+      content: `将删除分类“${summaryText}”。删除后不可恢复，是否继续？`,
+      okType: "danger",
+      okText: "删除",
+      cancelText: "取消",
+      onOk: async () => {
+        try {
+          const firstPass = await executeSingleDelete(node);
+          applyDeletedNodes(firstPass.deletedIds);
+
+          if (!firstPass.cascadeRequiredNodes.length) {
+            messageApi.success("分类已删除");
+            return;
+          }
+
+          await new Promise<void>((resolve, reject) => {
+            modal.confirm({
+              title: "检测到子分类",
+              content: `分类“${summaryText}”包含子分类，是否继续级联删除？`,
+              okType: "danger",
+              okText: "级联删除",
+              cancelText: "取消",
+              onOk: async () => {
+                try {
+                  const cascadePass = await executeSingleDelete(node, {
+                    cascade: true,
+                    confirm: true,
+                  });
+                  applyDeletedNodes(cascadePass.deletedIds);
+                  messageApi.success("分类已删除");
+                  resolve();
+                } catch (error: any) {
+                  const msg = error?.message || error?.error || "级联删除失败";
+                  messageApi.error(msg);
+                  reject(error);
+                }
+              },
+              onCancel: () => resolve(),
+            });
+          });
+        } catch (error: any) {
+          const msg = error?.message || error?.error || "删除分类失败";
+          messageApi.error(msg);
+          throw error;
+        }
+      },
+    });
+  };
+
+  const normalizeBatchDeleteTargets = (nodes: CategoryTreeNode[]) => {
+    const existingKeys = collectNodeKeys(treeData);
+    const parentMap = buildParentKeyMap(treeData);
+    const uniqueNodes = new Map<React.Key, CategoryTreeNode>();
+
+    nodes.forEach((node) => {
+      if (existingKeys.has(node.key)) {
+        uniqueNodes.set(node.key, node);
+      }
+    });
+
+    return Array.from(uniqueNodes.values()).filter((node) => {
+      let currentParent = parentMap.get(node.key);
+      while (currentParent) {
+        if (uniqueNodes.has(currentParent)) {
+          return false;
+        }
+        currentParent = parentMap.get(currentParent);
+      }
+      return true;
+    });
+  };
+
+  const performBatchDelete = (nodes: CategoryTreeNode[]) => {
+    const targetNodes = normalizeBatchDeleteTargets(nodes);
+    if (!targetNodes.length) {
+      messageApi.info("未找到可删除的分类");
+      return;
+    }
+
+    if (targetNodes.length === 1) {
+      runSingleDeleteFlow(targetNodes[0]);
+      return;
+    }
+
+    const summaryText = summarizeNodeNames(targetNodes);
+
+    modal.confirm({
+      title: "确认批量删除",
+      content: `将删除 ${targetNodes.length} 个分类：${summaryText}。删除后不可恢复，是否继续？`,
+      okType: "danger",
+      okText: "删除",
+      cancelText: "取消",
+      onOk: async () => {
+        try {
+          const firstPass = await executeBatchDelete(targetNodes);
+          applyDeletedNodes(firstPass.deletedIds);
+
+          if (!firstPass.cascadeRequiredNodes.length) {
+            notifyBatchDeleteOutcome(firstPass.deletedIds.length, firstPass.failedResults);
+            return;
+          }
+
+          const cascadeSummary = summarizeNodeNames(firstPass.cascadeRequiredNodes);
+
+          await new Promise<void>((resolve, reject) => {
+            modal.confirm({
+              title: "检测到子分类",
+              content:
+                firstPass.cascadeRequiredNodes.length > 1
+                  ? `以下分类包含子分类，是否继续级联删除：${cascadeSummary}`
+                  : `分类“${cascadeSummary}”包含子分类，是否继续级联删除？`,
+              okType: "danger",
+              okText: "级联删除",
+              cancelText: "取消",
+              onOk: async () => {
+                try {
+                  const cascadePass = await executeBatchDelete(firstPass.cascadeRequiredNodes, {
+                    cascade: true,
+                    confirm: true,
+                  });
+                  applyDeletedNodes(cascadePass.deletedIds);
+                  notifyBatchDeleteOutcome(
+                    firstPass.deletedIds.length + cascadePass.deletedIds.length,
+                    [...firstPass.failedResults, ...cascadePass.failedResults],
+                  );
+                  resolve();
+                } catch (error: any) {
+                  const msg = error?.message || error?.error || "级联删除失败";
+                  messageApi.error(msg);
+                  reject(error);
+                }
+              },
+              onCancel: () => {
+                if (firstPass.deletedIds.length) {
+                  messageApi.warning("部分分类已删除，包含子分类的项已取消删除");
+                }
+                resolve();
+              },
+            });
+          });
+        } catch (error: any) {
+          const msg = error?.message || error?.error || "删除分类失败";
+          messageApi.error(msg);
+          throw error;
+        }
+      },
+    });
   };
 
   // Initial Load (Segments)
@@ -675,21 +1068,7 @@ const CategoryManagementPage: React.FC = () => {
     }
 
     if (key === "delete") {
-      modal.confirm({
-        title: "确认删除",
-        content: "删除后不可恢复，是否继续？",
-        okType: "danger",
-        okText: "删除",
-        cancelText: "取消",
-        onOk: () => {
-          setTreeData((origin) => removeNodeFromTree(origin, node.key));
-          if (selectedKey === node.key) {
-            setSelectedKey("");
-            setSelectedNode(undefined);
-          }
-          messageApi.success("分类已删除");
-        },
-      });
+      performBatchDelete([node]);
     }
   };
 
@@ -901,6 +1280,7 @@ const CategoryManagementPage: React.FC = () => {
             loadedKeys={loadedKeys}
             onLoad={(keys) => setLoadedKeys(keys as React.Key[])}
             onMenuClick={handleMenuClick}
+            onBatchDelete={(nodes) => performBatchDelete(nodes as CategoryTreeNode[])}
             onCategoryCreated={handleCategoryCreated}
           />
         </Splitter.Panel>

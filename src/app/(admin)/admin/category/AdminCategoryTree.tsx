@@ -36,6 +36,7 @@ import { semanticStatusColors } from "@/styles/colors";
 
 interface AdminCategoryTreeProps extends CategoryTreeProps {
   onMenuClick?: (key: string, node: DataNode) => void;
+  onBatchDelete?: (nodes: DataNode[]) => void;
   onCategoryCreated?: (
     created: MetaCategoryDetailDto,
     parent?: {
@@ -240,6 +241,7 @@ const ToolbarActions: React.FC<ToolbarActionsProps> = ({
 
 const AdminCategoryTree: React.FC<AdminCategoryTreeProps> = ({
   onMenuClick,
+  onBatchDelete,
   onCategoryCreated,
   ...props
 }) => {
@@ -420,10 +422,17 @@ const AdminCategoryTree: React.FC<AdminCategoryTreeProps> = ({
       });
   };
 
+  const resolveCheckedNodes = (checkedKeys: React.Key[]) => {
+    if (checkedKeys.length === 0) return [];
+    return checkedKeys
+      .map((key) => findNodeByKey(props.treeData, key))
+      .filter((node): node is DataNode => !!node);
+  };
+
   const resolveSingleCheckedNode = (checkedKeys: React.Key[]) => {
     if (checkedKeys.length === 0) return null;
     if (checkedKeys.length > 1) {
-      messageApi.info("当前批量操作尚未接入，请先只勾选一个分类");
+      messageApi.info("当前操作仅支持单个分类");
       return null;
     }
     return findNodeByKey(props.treeData, checkedKeys[0]);
@@ -452,9 +461,14 @@ const AdminCategoryTree: React.FC<AdminCategoryTreeProps> = ({
                 openCreateModal(activeNode);
               }}
               onDelete={() => {
-                if (!hasCheckedNodes || !onMenuClick) return;
-                const node = resolveSingleCheckedNode(checkedKeys);
-                if (node) onMenuClick("delete", node);
+                if (!hasCheckedNodes) return;
+                const nodes = resolveCheckedNodes(checkedKeys);
+                if (!nodes.length) return;
+                if (nodes.length === 1 && onMenuClick) {
+                  onMenuClick("delete", nodes[0]);
+                  return;
+                }
+                onBatchDelete?.(nodes);
               }}
               onCopy={() => {
                 if (!hasCheckedNodes || !onMenuClick) return;

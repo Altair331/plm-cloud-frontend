@@ -133,6 +133,41 @@ export interface MetaCategoryDetailDto {
   historyVersions?: MetaCategoryVersionHistoryDto[];
 }
 
+export interface DeleteCategoryResponseDto {
+  id: string;
+  cascade: boolean;
+  deletedCount: number;
+}
+
+export interface MetaCategoryBatchDeleteRequestDto {
+  ids: string[];
+  cascade?: boolean;
+  confirm?: boolean;
+  atomic?: boolean;
+  dryRun?: boolean;
+  operator?: string | null;
+}
+
+export interface MetaCategoryBatchDeleteResultDto {
+  id: string;
+  success: boolean;
+  deletedCount: number;
+  wouldDeleteCount?: number | null;
+  code?: string | null;
+  message?: string | null;
+}
+
+export interface MetaCategoryBatchDeleteResponseDto {
+  total: number;
+  successCount: number;
+  failureCount: number;
+  deletedCount: number;
+  totalWouldDeleteCount: number;
+  atomic: boolean;
+  dryRun: boolean;
+  results: MetaCategoryBatchDeleteResultDto[];
+}
+
 const CATEGORY_BASE = '/api/meta/categories';
 
 export const metaCategoryApi = {
@@ -207,6 +242,25 @@ export const metaCategoryApi = {
         operator: options?.operator || 'admin',
       },
     });
+  },
+
+  deleteCategory(
+    id: string,
+    options?: { cascade?: boolean; confirm?: boolean; operator?: string },
+  ): Promise<DeleteCategoryResponseDto> {
+    return request.delete(`${CATEGORY_BASE}/${encodeURIComponent(id)}`, {
+      params: {
+        cascade: options?.cascade ?? false,
+        confirm: options?.confirm ?? false,
+        operator: options?.operator || 'admin',
+      },
+    });
+  },
+
+  batchDeleteCategories(
+    data: MetaCategoryBatchDeleteRequestDto,
+  ): Promise<MetaCategoryBatchDeleteResponseDto> {
+    return request.post(`${CATEGORY_BASE}/batch-delete`, data);
   },
 
   compareCategoryVersions(
