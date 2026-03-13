@@ -183,6 +183,8 @@ const CategoryManagementPage: React.FC = () => {
   const [previewSaving, setPreviewSaving] = useState(false);
   const [renameGuidedEdit, setRenameGuidedEdit] = useState(false);
   const [previewEditBaseline, setPreviewEditBaseline] = useState("");
+  const [previewEditCurrent, setPreviewEditCurrent] = useState("");
+  const [pendingPreviewFormValues, setPendingPreviewFormValues] = useState<Record<string, any> | null>(null);
   const [previewForm] = Form.useForm();
 
   const [treeData, setTreeData] = useState<CategoryTreeNode[]>([]);
@@ -366,15 +368,27 @@ const CategoryManagementPage: React.FC = () => {
     }
   };
 
+  const buildPreviewSnapshot = (values?: {
+    name?: string;
+    businessDomain?: string;
+    status?: string;
+    description?: string;
+  }) => JSON.stringify({
+    name: values?.name || "",
+    businessDomain: values?.businessDomain || "",
+    status: values?.status || "",
+    description: normalizeDeltaJson(values?.description || EMPTY_QUILL_DELTA_JSON),
+  });
+
   const checkPreviewUnsaved = (onConfirm: () => void) => {
-    const currentValues = previewForm.getFieldsValue(true);
-    const currentSnapshot = JSON.stringify({
-      name: currentValues?.name || "",
-      businessDomain: currentValues?.businessDomain || "",
-      status: currentValues?.status || "",
-      description: normalizeDeltaJson(currentValues?.description || EMPTY_QUILL_DELTA_JSON),
-    });
-    const hasRealChanges = previewEditing && !!previewEditBaseline && currentSnapshot !== previewEditBaseline;
+    if (!previewEditing) {
+      setPreviewEditBaseline("");
+      setPreviewEditCurrent("");
+      onConfirm();
+      return;
+    }
+
+    const hasRealChanges = previewEditing && !!previewEditBaseline && previewEditCurrent !== previewEditBaseline;
 
     if (hasRealChanges) {
       modal.confirm({
@@ -384,16 +398,25 @@ const CategoryManagementPage: React.FC = () => {
         cancelText: "取消",
         okType: "danger",
         onOk: () => {
-          previewForm.resetFields();
           setPreviewEditBaseline("");
+          setPreviewEditCurrent("");
           onConfirm();
         },
       });
     } else {
       setPreviewEditBaseline("");
+      setPreviewEditCurrent("");
       onConfirm();
     }
   };
+
+  useEffect(() => {
+    if (!drawerVisible || !previewEditing || !pendingPreviewFormValues) {
+      return;
+    }
+    previewForm.setFieldsValue(pendingPreviewFormValues);
+    setPendingPreviewFormValues(null);
+  }, [drawerVisible, previewEditing, pendingPreviewFormValues, previewForm]);
 
   const openPreviewDetail = (
     node: CategoryTreeNode,
@@ -412,7 +435,9 @@ const CategoryManagementPage: React.FC = () => {
       setPreviewDetail(null);
       setPreviewEditing(false);
       setRenameGuidedEdit(false);
-      previewForm.resetFields();
+      setPendingPreviewFormValues(null);
+      setPreviewEditBaseline("");
+      setPreviewEditCurrent("");
       messageApi.warning(
         startEdit
           ? "本地临时节点暂不支持重命名，请保存后在详情页编辑"
@@ -435,19 +460,17 @@ const CategoryManagementPage: React.FC = () => {
             status: resolveStatusSemantic(detail.status, categoryStatusEntries),
             description: detail.description || EMPTY_QUILL_DELTA_JSON,
           };
-          previewForm.setFieldsValue(initialValues);
-          setPreviewEditBaseline(JSON.stringify({
-            name: initialValues.name || "",
-            businessDomain: initialValues.businessDomain || "",
-            status: initialValues.status || "",
-            description: normalizeDeltaJson(initialValues.description || EMPTY_QUILL_DELTA_JSON),
-          }));
+          const snapshot = buildPreviewSnapshot(initialValues);
+          setPreviewEditBaseline(snapshot);
+          setPreviewEditCurrent(snapshot);
+          setPendingPreviewFormValues(initialValues);
           setPreviewEditing(true);
         } else {
           setPreviewEditing(false);
           setRenameGuidedEdit(false);
           setPreviewEditBaseline("");
-          previewForm.resetFields();
+          setPreviewEditCurrent("");
+          setPendingPreviewFormValues(null);
         }
 
         if (openAfterDataReady) {
@@ -460,7 +483,8 @@ const CategoryManagementPage: React.FC = () => {
         setPreviewEditing(false);
         setRenameGuidedEdit(false);
         setPreviewEditBaseline("");
-        previewForm.resetFields();
+        setPreviewEditCurrent("");
+        setPendingPreviewFormValues(null);
         messageApi.error("加载分类详情失败");
       })
       .finally(() => {
@@ -625,10 +649,10 @@ const CategoryManagementPage: React.FC = () => {
           if (previewDetail?.id === id) {
             setPreviewDetail(updated);
             if (previewEditing) {
-              previewForm.setFieldsValue({
-                ...previewForm.getFieldsValue(true),
+              setPendingPreviewFormValues((prev) => ({
+                ...(prev || {}),
                 status: resolveStatusSemantic(updated.status, categoryStatusEntries),
-              });
+              }));
             }
           }
 
@@ -743,13 +767,10 @@ const CategoryManagementPage: React.FC = () => {
       status: resolveStatusSemantic(previewDetail.status, categoryStatusEntries),
       description: previewDetail.description || EMPTY_QUILL_DELTA_JSON,
     };
-    previewForm.setFieldsValue(initialValues);
-    setPreviewEditBaseline(JSON.stringify({
-      name: initialValues.name || "",
-      businessDomain: initialValues.businessDomain || "",
-      status: initialValues.status || "",
-      description: normalizeDeltaJson(initialValues.description || EMPTY_QUILL_DELTA_JSON),
-    }));
+    const snapshot = buildPreviewSnapshot(initialValues);
+    setPreviewEditBaseline(snapshot);
+    setPreviewEditCurrent(snapshot);
+    setPendingPreviewFormValues(initialValues);
     setPreviewEditing(true);
   };
 
@@ -775,7 +796,8 @@ const CategoryManagementPage: React.FC = () => {
       setPreviewEditing(false);
       setRenameGuidedEdit(false);
       setPreviewEditBaseline("");
-      previewForm.resetFields();
+      setPreviewEditCurrent("");
+      setPendingPreviewFormValues(null);
 
       setTreeData((origin) =>
         updateNodeInTree(origin, previewDetail.id, (targetNode) => ({
@@ -916,6 +938,8 @@ const CategoryManagementPage: React.FC = () => {
                         setPreviewEditing(false);
                         setRenameGuidedEdit(false);
                         setPreviewEditBaseline("");
+                        setPreviewEditCurrent("");
+                        setPendingPreviewFormValues(null);
                       })}>取消</Button>
                       <Button type="primary" loading={previewSaving} onClick={handleSavePreviewEdit}>
                         保存
@@ -933,9 +957,12 @@ const CategoryManagementPage: React.FC = () => {
                   setPreviewEditing(false);
                   setRenameGuidedEdit(false);
                   setPreviewEditBaseline("");
+                  setPreviewEditCurrent("");
+                  setPendingPreviewFormValues(null);
                 });
               }}
               open={drawerVisible}
+              forceRender
               getContainer={false}
               rootStyle={{ position: 'absolute' }}
               width="100%"
@@ -954,7 +981,13 @@ const CategoryManagementPage: React.FC = () => {
                       children: (
                         <>
                           {previewEditing ? (
-                            <Form form={previewForm} layout="vertical">
+                            <Form
+                              form={previewForm}
+                              layout="vertical"
+                              onValuesChange={(_, allValues) => {
+                                setPreviewEditCurrent(buildPreviewSnapshot(allValues));
+                              }}
+                            >
                               <Card 
                                 size="small" 
                                 variant="outlined" 

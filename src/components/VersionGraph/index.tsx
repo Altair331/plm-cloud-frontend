@@ -394,7 +394,10 @@ const VersionGraph: React.FC<VersionGraphProps> = ({ categoryId, versions = [] }
 
           {compareLoading ? (
             <div style={{ height: 120, display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <Spin tip="正在加载版本差异..." />
+              <Space orientation="vertical" align="center" size={8}>
+                <Spin />
+                <Typography.Text type="secondary">正在加载版本差异...</Typography.Text>
+              </Space>
             </div>
           ) : compareError ? (
             <Alert type="error" showIcon title="版本对比失败" description={compareError} />

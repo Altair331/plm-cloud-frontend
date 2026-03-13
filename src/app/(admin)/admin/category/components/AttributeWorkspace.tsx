@@ -305,28 +305,32 @@ const AttributeWorkspace: React.FC<AttributeWorkspaceProps> = ({
 
   useEffect(() => {
     if (!attribute) {
-      form.resetFields();
       prevAttributeIdRef.current = undefined;
       setIsEditing(false);
+      setSaveStatus("idle");
       return;
     }
 
     if (attribute.id !== prevAttributeIdRef.current) {
-      // Attribute selection changed: Clean reset
-      form.resetFields();
-      form.setFieldsValue(attribute);
-      
+      // Attribute selection changed: switch editing mode by attribute type
       const isNew = attribute.id.startsWith("new_attr_");
       setIsEditing(isNew);
       setSaveStatus("idle");
-      
       prevAttributeIdRef.current = attribute.id;
-    } else {
-      // Same attribute updated (e.g. typing): Sync values
-      // Only set fields that are different to avoid cursor issues usually handled by Antd
+      return;
+    }
+
+    // Same attribute updated while editing: keep form in sync.
+    if (isEditing) {
       form.setFieldsValue(attribute);
     }
-  }, [attribute, form]); // Dependency on attribute includes all updates
+  }, [attribute, isEditing, form]);
+
+  useEffect(() => {
+    // Ensure form values are written only after edit form is mounted.
+    if (!isEditing || !attribute) return;
+    form.setFieldsValue(attribute);
+  }, [isEditing, attribute, form]);
 
   /* Removed conflicting useEffects */
 
@@ -485,7 +489,10 @@ const AttributeWorkspace: React.FC<AttributeWorkspaceProps> = ({
             type="text"
             size="small"
             icon={<EditOutlined />}
-            onClick={() => setIsEditing(true)}
+            onClick={() => {
+              if (!attribute) return;
+              setIsEditing(true);
+            }}
           >
             编辑 (Edit)
           </Button>
@@ -522,7 +529,7 @@ const AttributeWorkspace: React.FC<AttributeWorkspaceProps> = ({
         column={2}
         bordered
         size="small"
-        labelStyle={{ width: "180px" }}
+        styles={{ label: { width: "180px" } }}
       >
         <Descriptions.Item label="名称 (Display Name)">
           {attribute.name}
@@ -586,7 +593,7 @@ const AttributeWorkspace: React.FC<AttributeWorkspaceProps> = ({
             column={2}
             bordered
             size="small"
-            labelStyle={{ width: "120px" }}
+            styles={{ label: { width: "120px" } }}
           >
             {/* {attribute.type === "string" && (
               <>
