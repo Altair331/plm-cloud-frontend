@@ -65,12 +65,19 @@ export const dndTreeGlobalStyles = `
     border-radius: 6px;
   }
   .dnd-transfer-tree .ant-tree-switcher .ant-tree-switcher-icon,
+  .dnd-transfer-tree .ant-tree-switcher .ant-tree-switcher-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    position: relative;
+    top: ${TREE_SWITCHER_ICON_VERTICAL_OFFSET}px;
+  }
   .dnd-transfer-tree .ant-tree-switcher .ant-tree-switcher-icon svg {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     line-height: 1;
-    transform: translateY(${TREE_SWITCHER_ICON_VERTICAL_OFFSET}px);
   }
   .dnd-transfer-tree .ant-tree-iconEle .anticon,
   .dnd-transfer-tree .ant-tree-iconEle .anticon svg {
