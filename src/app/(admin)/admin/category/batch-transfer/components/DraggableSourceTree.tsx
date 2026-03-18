@@ -10,15 +10,24 @@ interface DraggableSourceTreeProps {
   treeData: TransferTreeNode[];
   expandedKeys: React.Key[];
   onExpand: (expandedKeys: React.Key[]) => void;
+  onMovedNodeHover?: (key: React.Key | null) => void;
 }
 
 // 封装自定义的可拖拽节点 Title
-const SourceNodeTitle = ({ nodeData, token }: { nodeData: any, token: any }) => {
-  const { isContextOnly } = nodeData;
+const SourceNodeTitle = ({
+  nodeData,
+  token,
+  onMovedNodeHover,
+}: {
+  nodeData: any;
+  token: any;
+  onMovedNodeHover?: (key: React.Key | null) => void;
+}) => {
+  const { isContextOnly, isMovedSource } = nodeData;
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `src-${nodeData.key}`,
     data: nodeData,
-    disabled: isContextOnly
+    disabled: isContextOnly || isMovedSource
   });
 
   return (
@@ -26,12 +35,43 @@ const SourceNodeTitle = ({ nodeData, token }: { nodeData: any, token: any }) => 
       ref={setNodeRef}
       {...listeners}
       {...attributes}
-      style={getTransferNodeLabelStyle(token, {
-        disabled: isContextOnly,
-        dragging: isDragging,
-      })}
+      onMouseEnter={() => {
+        if (isMovedSource) {
+          onMovedNodeHover?.(nodeData.key);
+        }
+      }}
+      onMouseLeave={() => {
+        if (isMovedSource) {
+          onMovedNodeHover?.(null);
+        }
+      }}
+      style={{
+        ...getTransferNodeLabelStyle(token, {
+          disabled: isContextOnly || isMovedSource,
+          dragging: isDragging,
+        }),
+        color: isMovedSource ? token.colorTextSecondary : undefined,
+        opacity: isMovedSource && !isDragging ? 0.72 : undefined,
+      }}
     >
-      {nodeData.title}
+      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nodeData.title}</span>
+      {isMovedSource && (
+        <span
+          style={{
+            marginLeft: 8,
+            fontSize: 12,
+            color: token.colorSuccess,
+            background: token.colorSuccessBg,
+            border: `1px solid ${token.colorSuccessBorder}`,
+            borderRadius: 999,
+            padding: '1px 6px',
+            lineHeight: '18px',
+            flexShrink: 0,
+          }}
+        >
+          已移动
+        </span>
+      )}
     </span>
   );
 };
@@ -39,12 +79,13 @@ const SourceNodeTitle = ({ nodeData, token }: { nodeData: any, token: any }) => 
 export default function DraggableSourceTree({
   treeData,
   expandedKeys,
-  onExpand
+  onExpand,
+  onMovedNodeHover,
 }: DraggableSourceTreeProps) {
   const { token } = theme.useToken();
 
   const titleRender = (nodeData: any) => {
-    return <SourceNodeTitle nodeData={nodeData} token={token} />;
+    return <SourceNodeTitle nodeData={nodeData} token={token} onMovedNodeHover={onMovedNodeHover} />;
   };
 
   return (

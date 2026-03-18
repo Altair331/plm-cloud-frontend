@@ -59,6 +59,8 @@ export interface TransferTreeNode {
   isVirtual?: boolean;
   isPendingPlacement?: boolean;
   isPreviewRoot?: boolean;
+  isPreviewNode?: boolean;
+  isMovedSource?: boolean;
   dataRef?: MetaCategoryNodeDto;
 }
 
@@ -66,6 +68,11 @@ interface PendingOperation {
   sourceNode: TransferTreeNode;
   targetKey: React.Key | null;
   id: string;
+}
+
+interface VirtualRelationEntry {
+  currentParentId: string | null;
+  isVirtual: boolean;
 }
 
 export interface TransferWorkspaceProps {
@@ -207,6 +214,137 @@ const isRootCategoryNode = (node?: TransferTreeNode | null) => {
   return node.dataRef.level === 1 || node.dataRef.parentId == null;
 };
 
+const collectNodeMap = (
+  nodes: TransferTreeNode[],
+  nodeMap: Map<string, TransferTreeNode> = new Map(),
+): Map<string, TransferTreeNode> => {
+  nodes.forEach((node) => {
+    nodeMap.set(String(node.key), node);
+    if (node.children?.length) {
+      collectNodeMap(node.children, nodeMap);
+    }
+  });
+
+  return nodeMap;
+};
+
+const cloneTransferTreeNode = (node: TransferTreeNode): TransferTreeNode => ({
+  ...node,
+  isVirtual: false,
+  isPendingPlacement: false,
+  isPreviewRoot: false,
+  children: node.children?.map(cloneTransferTreeNode),
+});
+
+const extractNodeFromTree = (
+  nodes: TransferTreeNode[],
+  targetKey: React.Key,
+): { nextNodes: TransferTreeNode[]; extractedNode: TransferTreeNode | null } => {
+  let extractedNode: TransferTreeNode | null = null;
+
+  const visit = (items: TransferTreeNode[]): TransferTreeNode[] => {
+    const nextItems: TransferTreeNode[] = [];
+
+    items.forEach((item) => {
+      if (item.key === targetKey) {
+        extractedNode = item;
+        return;
+      }
+
+      const nextChildren = item.children?.length ? visit(item.children) : item.children;
+      nextItems.push({
+        ...item,
+        children: nextChildren,
+      });
+    });
+
+    return nextItems;
+  };
+
+  return {
+    nextNodes: visit(nodes),
+    extractedNode,
+  };
+};
+
+const insertNodeIntoTree = (
+  nodes: TransferTreeNode[],
+  targetParentKey: React.Key | null,
+  nodeToInsert: TransferTreeNode,
+): TransferTreeNode[] => {
+  if (targetParentKey == null) {
+    return [...nodes, nodeToInsert];
+  }
+
+  const visit = (items: TransferTreeNode[]): { nextItems: TransferTreeNode[]; inserted: boolean } => {
+    let inserted = false;
+
+    const nextItems = items.map((item) => {
+      if (item.key === targetParentKey) {
+        inserted = true;
+        return {
+          ...item,
+          isLeaf: false,
+          children: [...(item.children || []), nodeToInsert],
+        };
+      }
+
+      if (item.children?.length) {
+        const result = visit(item.children);
+        if (result.inserted) {
+          inserted = true;
+          return {
+            ...item,
+            children: result.nextItems,
+          };
+        }
+      }
+
+      return item;
+    });
+
+    return { nextItems, inserted };
+  };
+
+  const result = visit(nodes);
+  return result.inserted ? result.nextItems : nodes;
+};
+
+const markMovedPreviewNode = (
+  node: TransferTreeNode,
+  isRootPlacement: boolean,
+): TransferTreeNode => ({
+  ...node,
+  isVirtual: true,
+  isPreviewNode: true,
+  isPreviewRoot: true,
+  isPendingPlacement: isRootPlacement,
+  children: node.children?.map((child) => ({
+    ...markMovedPreviewNode(child, false),
+    isPreviewRoot: false,
+  })),
+});
+
+const annotateMovedSourceNodes = (
+  nodes: TransferTreeNode[],
+  movedSourceKeySet: Set<string>,
+): TransferTreeNode[] => {
+  return nodes.map((node) => ({
+    ...node,
+    isMovedSource: movedSourceKeySet.has(String(node.key)),
+    children: node.children ? annotateMovedSourceNodes(node.children, movedSourceKeySet) : undefined,
+  }));
+};
+
+const collectSubtreeKeys = (
+  node: TransferTreeNode,
+  keySet: Set<string> = new Set(),
+): Set<string> => {
+  keySet.add(String(node.key));
+  node.children?.forEach((child) => collectSubtreeKeys(child, keySet));
+  return keySet;
+};
+
 export default function TransferWorkspace({
   businessDomain,
   initialAction,
@@ -247,11 +385,13 @@ export default function TransferWorkspace({
   const [pendingOperations, setPendingOperations] = useState<PendingOperation[]>([]);
   const [hoveredTargetKey, setHoveredTargetKey] = useState<React.Key | null>(null);
   const [hoveredTargetTitle, setHoveredTargetTitle] = useState<string>('目标分类');
+  const [hoveredMovedSourceKey, setHoveredMovedSourceKey] = useState<React.Key | null>(null);
   const [sourceData, setSourceData] = useState<TransferTreeNode[]>([]);
   const [targetData, setTargetData] = useState<TransferTreeNode[]>([]);
   const [sourceExpandedKeys, setSourceExpandedKeys] = useState<React.Key[]>([]);
   const [targetExpandedKeys, setTargetExpandedKeys] = useState<React.Key[]>([]);
   const [targetLoadedKeys, setTargetLoadedKeys] = useState<React.Key[]>([]);
+  const [virtualRelationMap, setVirtualRelationMap] = useState<Record<string, VirtualRelationEntry>>({});
   const targetScrollViewportRef = useRef<HTMLDivElement | null>(null);
   const rootDropTargetRef = useRef<HTMLDivElement | null>(null);
 
@@ -260,9 +400,22 @@ export default function TransferWorkspace({
     return action === 'copy' ? '复制' : '移动';
   }, [initialAction, pendingAction]);
 
+  const currentActionType = useMemo<'move' | 'copy'>(() => {
+    return pendingAction || initialAction || 'move';
+  }, [initialAction, pendingAction]);
+
   const rootDropDisabled = useMemo(() => {
-    return isRootCategoryNode(activeDragNode);
-  }, [activeDragNode]);
+    return currentActionType === 'move' && isRootCategoryNode(activeDragNode);
+  }, [activeDragNode, currentActionType]);
+
+  const transferNodeLookup = useMemo(() => {
+    const lookup = collectNodeMap(targetData);
+    collectNodeMap(sourceData, lookup);
+    pendingOperations.forEach((operation) => {
+      collectNodeMap([operation.sourceNode], lookup);
+    });
+    return lookup;
+  }, [targetData, sourceData, pendingOperations]);
 
   const collisionDetectionStrategy = useMemo<CollisionDetection>(() => {
     return (args) => {
@@ -272,15 +425,15 @@ export default function TransferWorkspace({
       const rootRect = args.droppableRects.get(ROOT_DROP_TARGET_DROPPABLE_ID);
 
       if (pointer && rootElementRect && rectContainsPoint(rootElementRect, pointer)) {
-        if (rootDropDisabled) {
-          return [];
-        }
-
         const rootCollision = collisions.find(
           (collision) => collision.id === ROOT_DROP_TARGET_DROPPABLE_ID,
         );
 
-        return rootCollision ? [rootCollision] : [];
+        if (rootCollision) {
+          return [rootCollision];
+        }
+
+        return [];
       }
 
       const viewportRect = targetScrollViewportRef.current?.getBoundingClientRect();
@@ -372,16 +525,48 @@ export default function TransferWorkspace({
   const disabledKeys = useMemo(() => {
     if (!activeDragNode) return [];
 
-    const collectKeys = (node: TransferTreeNode): React.Key[] => {
-      const keys: React.Key[] = [node.key];
-      if (node.children?.length) {
-        node.children.forEach((child) => keys.push(...collectKeys(child)));
+    const sourceNodeId = String(activeDragNode.key);
+    const blockedKeys = new Set<React.Key>([sourceNodeId]);
+
+    const getEffectiveParentId = (nodeId: string): string | null => {
+      const virtualParentId = virtualRelationMap[nodeId]?.currentParentId;
+      if (virtualParentId !== undefined) {
+        return virtualParentId;
       }
-      return keys;
+
+      return transferNodeLookup.get(nodeId)?.dataRef?.parentId ?? null;
     };
 
-    return collectKeys(activeDragNode);
-  }, [activeDragNode]);
+    transferNodeLookup.forEach((_node, nodeId) => {
+      if (nodeId === sourceNodeId) {
+        return;
+      }
+
+      const visited = new Set<string>();
+      let currentParentId = getEffectiveParentId(nodeId);
+
+      while (currentParentId && !visited.has(currentParentId)) {
+        if (currentParentId === sourceNodeId) {
+          blockedKeys.add(nodeId);
+          break;
+        }
+
+        visited.add(currentParentId);
+        currentParentId = getEffectiveParentId(currentParentId);
+      }
+    });
+
+    if (currentActionType === 'move') {
+      const currentParentId =
+        virtualRelationMap[sourceNodeId]?.currentParentId ?? activeDragNode.dataRef?.parentId ?? null;
+
+      if (currentParentId) {
+        blockedKeys.add(currentParentId);
+      }
+    }
+
+    return Array.from(blockedKeys);
+  }, [activeDragNode, currentActionType, virtualRelationMap, transferNodeLookup]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -497,6 +682,15 @@ export default function TransferWorkspace({
       }
       return [...prev, nextOperation];
     });
+    if (resolvedAction === 'move') {
+      setVirtualRelationMap((prev) => ({
+        ...prev,
+        [String(draggedNode.key)]: {
+          currentParentId: resolvedTargetKey == null ? null : String(resolvedTargetKey),
+          isVirtual: true,
+        },
+      }));
+    }
     if (resolvedTargetKey) {
       setTargetExpandedKeys((prev) => Array.from(new Set([...prev, resolvedTargetKey])));
     }
@@ -546,6 +740,7 @@ export default function TransferWorkspace({
       if (response.successCount > 0 || response.normalizedCount > 0) {
         setPendingOperations([]);
         setPendingAction(null);
+        setVirtualRelationMap({});
         onComplete?.(response);
       }
     } catch (error: any) {
@@ -620,6 +815,8 @@ export default function TransferWorkspace({
   const handleCancel = () => {
     setPendingAction(null);
     setPendingOperations([]);
+    setHoveredMovedSourceKey(null);
+    setVirtualRelationMap({});
   };
 
   useEffect(() => {
@@ -633,22 +830,40 @@ export default function TransferWorkspace({
   }, []);
 
   const displaySourceData = useMemo(() => {
-    if (pendingAction === 'move' && pendingOperations.length > 0) {
-      const keysToHide = new Set(pendingOperations.map((operation) => operation.sourceNode.key));
-      const hideNodes = (nodes: TransferTreeNode[]): TransferTreeNode[] => {
-        return nodes
-          .filter((node) => !keysToHide.has(node.key))
-          .map((node) => ({
-            ...node,
-            children: node.children ? hideNodes(node.children) : undefined,
-          }));
-      };
-      return hideNodes(sourceData);
+    const movedSourceKeySet = new Set<string>();
+
+    if (currentActionType === 'move') {
+      pendingOperations.forEach((operation) => {
+        collectSubtreeKeys(operation.sourceNode, movedSourceKeySet);
+      });
     }
-    return sourceData;
-  }, [sourceData, pendingAction, pendingOperations]);
+
+    return annotateMovedSourceNodes(sourceData, movedSourceKeySet);
+  }, [sourceData, pendingOperations, currentActionType]);
 
   const displayTargetData = useMemo(() => {
+    if (currentActionType === 'move') {
+      let currentData = targetData.map(cloneTransferTreeNode);
+
+      pendingOperations.forEach((operation) => {
+        const virtualRelation = virtualRelationMap[String(operation.sourceNode.key)];
+        const currentParentId = virtualRelation
+          ? virtualRelation.currentParentId
+          : operation.targetKey == null
+            ? null
+            : String(operation.targetKey);
+        const extracted = extractNodeFromTree(currentData, operation.sourceNode.key);
+        const movingNode = markMovedPreviewNode(
+          extracted.extractedNode ?? cloneTransferTreeNode(operation.sourceNode),
+          currentParentId == null,
+        );
+
+        currentData = insertNodeIntoTree(extracted.nextNodes, currentParentId, movingNode);
+      });
+
+      return currentData;
+    }
+
     let currentData = [...targetData];
 
     pendingOperations.forEach((operation) => {
@@ -689,7 +904,7 @@ export default function TransferWorkspace({
     });
 
     return currentData;
-  }, [targetData, pendingOperations]);
+  }, [targetData, pendingOperations, currentActionType, virtualRelationMap]);
 
   const spinning = loading || externalLoading;
 
@@ -741,6 +956,7 @@ export default function TransferWorkspace({
                     treeData={displaySourceData}
                     expandedKeys={sourceExpandedKeys}
                     onExpand={setSourceExpandedKeys}
+                    onMovedNodeHover={setHoveredMovedSourceKey}
                   />
                 ) : (
                   <div style={{ color: token.colorTextDisabled, textAlign: 'center', marginTop: 40 }}>
@@ -783,6 +999,7 @@ export default function TransferWorkspace({
                   rootDropDisabled={rootDropDisabled}
                   scrollViewportRef={targetScrollViewportRef}
                   rootDropTargetRef={rootDropTargetRef}
+                  highlightedPreviewKey={hoveredMovedSourceKey}
                 />
               </div>
             </Col>

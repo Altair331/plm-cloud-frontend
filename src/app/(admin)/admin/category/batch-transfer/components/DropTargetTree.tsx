@@ -22,6 +22,7 @@ interface DropTargetTreeProps {
   rootDropDisabled?: boolean;
   scrollViewportRef?: React.RefObject<HTMLDivElement | null>;
   rootDropTargetRef?: React.RefObject<HTMLDivElement | null>;
+  highlightedPreviewKey?: React.Key | null;
 }
 
 const RootDropTarget = ({
@@ -48,7 +49,6 @@ const RootDropTarget = ({
   const { setNodeRef, isOver } = useDroppable({
     id: `tgt-${String(dropKey)}`,
     data: rootDropNode,
-    disabled,
   });
 
   const active = !disabled && (isOver || isHoveringByDnd);
@@ -95,11 +95,19 @@ const RootDropTarget = ({
   );
 };
 
-const TargetNodeTitle = ({ nodeData, token, disabledKeys, pendingDropKeys = [], isHoveringByDnd }: any) => {
+const TargetNodeTitle = ({
+  nodeData,
+  token,
+  disabledKeys,
+  pendingDropKeys = [],
+  isHoveringByDnd,
+  highlightedPreviewKey,
+}: any) => {
   const isDisabled = disabledKeys.includes(nodeData.key);
   const isPendingTarget = pendingDropKeys.includes(nodeData.key);
   const isPendingPlacement = Boolean(nodeData.isPendingPlacement);
-  const isPreviewRoot = Boolean(nodeData.isPreviewRoot);
+  const isPreviewNode = Boolean(nodeData.isPreviewNode || nodeData.isPreviewRoot);
+  const isAffectedHighlight = highlightedPreviewKey != null && nodeData.key === highlightedPreviewKey;
 
   const { setNodeRef, isOver } = useDroppable({
     id: `tgt-${nodeData.key}`,
@@ -112,15 +120,22 @@ const TargetNodeTitle = ({ nodeData, token, disabledKeys, pendingDropKeys = [], 
       ref={setNodeRef}
       style={{
         transition: 'all 0.3s ease',
-        backgroundColor: isPendingPlacement
-          ? token.colorPrimaryBg
-          : (isOver || isHoveringByDnd) && !isDisabled
-            ? token.colorPrimaryBgHover
-            : 'transparent',
+        backgroundColor: isAffectedHighlight
+          ? token.colorInfoBg
+          : isPendingPlacement
+            ? token.colorPrimaryBg
+            : (isOver || isHoveringByDnd) && !isDisabled
+              ? token.colorPrimaryBgHover
+              : 'transparent',
         color: isDisabled ? token.colorTextDisabled : token.colorText,
         padding: '4px 8px',
         borderRadius: 4,
-        border: isPendingPlacement || isPendingTarget ? `1px dashed ${token.colorPrimary}` : '1px solid transparent',
+        border: isAffectedHighlight
+          ? `1px solid ${token.colorInfoBorder}`
+          : isPendingPlacement || isPendingTarget
+            ? `1px dashed ${token.colorPrimary}`
+            : '1px solid transparent',
+        boxShadow: isAffectedHighlight ? `inset 0 0 0 1px ${token.colorInfoBorder}` : 'none',
         display: 'inline-flex',
         alignItems: 'center',
         width: '100%',
@@ -133,7 +148,7 @@ const TargetNodeTitle = ({ nodeData, token, disabledKeys, pendingDropKeys = [], 
       }}
     >
       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nodeData.title}</span>
-      {isPreviewRoot && (
+      {isPreviewNode && (
         <span
           style={{
             marginLeft: 8,
@@ -185,6 +200,7 @@ export default function DropTargetTree({
   rootDropDisabled = false,
   scrollViewportRef,
   rootDropTargetRef,
+  highlightedPreviewKey,
 }: DropTargetTreeProps) {
   const { token } = theme.useToken();
 
@@ -196,6 +212,7 @@ export default function DropTargetTree({
         disabledKeys={disabledKeys}
         pendingDropKeys={pendingDropKeys}
         isHoveringByDnd={nodeData.key === hoveredTargetKey}
+        highlightedPreviewKey={highlightedPreviewKey}
       />
     );
   };
