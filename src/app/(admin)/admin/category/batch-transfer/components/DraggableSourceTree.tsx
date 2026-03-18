@@ -54,7 +54,17 @@ const SourceNodeTitle = ({
         opacity: isMovedSource && !isDragging ? 0.72 : undefined,
       }}
     >
-      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nodeData.title}</span>
+      <span
+        style={{
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          textDecoration: isMovedSource ? 'line-through' : 'none',
+          textDecorationThickness: isMovedSource ? 1.5 : undefined,
+        }}
+      >
+        {nodeData.title}
+      </span>
       {isMovedSource && (
         <span
           style={{

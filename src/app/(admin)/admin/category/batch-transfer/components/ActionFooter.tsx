@@ -45,7 +45,7 @@ export default function ActionFooter({
       <Space>
         {pendingAction && (
           <Button onClick={onCancel} disabled={loading}>
-            取消 (Esc)
+            取消
           </Button>
         )}
         
