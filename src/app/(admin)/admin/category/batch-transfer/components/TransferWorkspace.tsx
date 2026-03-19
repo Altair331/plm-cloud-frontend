@@ -20,6 +20,8 @@ import {
 import type {
   MetaCategoryBatchTransferRequestDto,
   MetaCategoryBatchTransferResponseDto,
+  MetaCategoryBatchTransferTopologyRequestDto,
+  MetaCategoryBatchTransferTopologyResponseDto,
   MetaCategoryNodeDto,
   MetaCategoryTreeNodeDto,
 } from '@/models/metaCategory';
@@ -70,6 +72,14 @@ interface PendingOperation {
   id: string;
 }
 
+interface PreparedMoveOperation {
+  operation: PendingOperation;
+  sourceNodeId: string;
+  targetParentId: string | null;
+  dependsOnOperationIds: string[];
+  originalParentId: string | null;
+}
+
 interface VirtualRelationEntry {
   currentParentId: string | null;
   isVirtual: boolean;
@@ -80,7 +90,9 @@ export interface TransferWorkspaceProps {
   initialAction?: 'move' | 'copy';
   sourceNodesData?: TransferTreeNode[];
   externalLoading?: boolean;
-  onComplete?: (response?: MetaCategoryBatchTransferResponseDto) => void;
+  onComplete?: (
+    response?: MetaCategoryBatchTransferResponseDto | MetaCategoryBatchTransferTopologyResponseDto,
+  ) => void;
   onCancelWorkspace?: () => void;
 }
 
@@ -236,37 +248,6 @@ const cloneTransferTreeNode = (node: TransferTreeNode): TransferTreeNode => ({
   children: node.children?.map(cloneTransferTreeNode),
 });
 
-const extractNodeFromTree = (
-  nodes: TransferTreeNode[],
-  targetKey: React.Key,
-): { nextNodes: TransferTreeNode[]; extractedNode: TransferTreeNode | null } => {
-  let extractedNode: TransferTreeNode | null = null;
-
-  const visit = (items: TransferTreeNode[]): TransferTreeNode[] => {
-    const nextItems: TransferTreeNode[] = [];
-
-    items.forEach((item) => {
-      if (item.key === targetKey) {
-        extractedNode = item;
-        return;
-      }
-
-      const nextChildren = item.children?.length ? visit(item.children) : item.children;
-      nextItems.push({
-        ...item,
-        children: nextChildren,
-      });
-    });
-
-    return nextItems;
-  };
-
-  return {
-    nextNodes: visit(nodes),
-    extractedNode,
-  };
-};
-
 const insertNodeIntoTree = (
   nodes: TransferTreeNode[],
   targetParentKey: React.Key | null,
@@ -343,6 +324,172 @@ const collectSubtreeKeys = (
   keySet.add(String(node.key));
   node.children?.forEach((child) => collectSubtreeKeys(child, keySet));
   return keySet;
+};
+
+const pruneNestedPendingNodes = (
+  node: TransferTreeNode,
+  rootSourceKey: string,
+  pendingSourceKeySet: Set<string>,
+): TransferTreeNode | null => {
+  const nodeKey = String(node.key);
+  if (nodeKey !== rootSourceKey && pendingSourceKeySet.has(nodeKey)) {
+    return null;
+  }
+
+  return {
+    ...node,
+    children: node.children
+      ?.map((child) => pruneNestedPendingNodes(child, rootSourceKey, pendingSourceKeySet))
+      .filter((child): child is TransferTreeNode => child != null),
+  };
+};
+
+const removeNodesFromTree = (
+  nodes: TransferTreeNode[],
+  removedNodeKeySet: Set<string>,
+): TransferTreeNode[] => {
+  return nodes.flatMap((node) => {
+    if (removedNodeKeySet.has(String(node.key))) {
+      return [];
+    }
+
+    return [
+      {
+        ...node,
+        children: node.children ? removeNodesFromTree(node.children, removedNodeKeySet) : undefined,
+      },
+    ];
+  });
+};
+
+const preparePendingMoveOperations = (
+  operations: PendingOperation[],
+  virtualRelationMap: Record<string, VirtualRelationEntry>,
+): PreparedMoveOperation[] => {
+  const operationByNodeId = new Map<string, PendingOperation>();
+  const operationById = new Map<string, PendingOperation>();
+  const subtreeKeysByOperationId = new Map<string, Set<string>>();
+  const dependencyMap = new Map<string, Set<string>>();
+  const indexByOperationId = new Map<string, number>();
+  const targetParentIdByOperationId = new Map<string, string | null>();
+
+  operations.forEach((operation, index) => {
+    operationByNodeId.set(String(operation.sourceNode.key), operation);
+    operationById.set(operation.id, operation);
+    subtreeKeysByOperationId.set(operation.id, collectSubtreeKeys(operation.sourceNode));
+    dependencyMap.set(operation.id, new Set());
+    indexByOperationId.set(operation.id, index);
+    targetParentIdByOperationId.set(
+      operation.id,
+      virtualRelationMap[String(operation.sourceNode.key)]?.currentParentId
+        ?? (operation.targetKey == null ? null : String(operation.targetKey)),
+    );
+  });
+
+  operations.forEach((operation) => {
+    const currentParentId = targetParentIdByOperationId.get(operation.id) ?? null;
+
+    if (!currentParentId) {
+      // no target dependency for root placement
+    } else {
+      operations.forEach((candidateOperation) => {
+        if (candidateOperation.id === operation.id) {
+          return;
+        }
+
+        if (subtreeKeysByOperationId.get(candidateOperation.id)?.has(currentParentId)) {
+          dependencyMap.get(operation.id)?.add(candidateOperation.id);
+        }
+      });
+    }
+
+    const currentOperationSubtreeKeys = subtreeKeysByOperationId.get(operation.id);
+    if (!currentOperationSubtreeKeys) {
+      return;
+    }
+
+    subtreeKeysByOperationId.forEach((otherSubtreeKeys, otherOperationId) => {
+      if (otherOperationId === operation.id) {
+        return;
+      }
+
+      const otherOperation = operationById.get(otherOperationId);
+      if (!otherOperation) {
+        return;
+      }
+
+      if (
+        currentOperationSubtreeKeys.has(String(otherOperation.sourceNode.key)) &&
+        !otherSubtreeKeys.has(String(operation.sourceNode.key))
+      ) {
+        dependencyMap.get(operation.id)?.add(otherOperationId);
+      }
+    });
+  });
+
+  const indegreeMap = new Map<string, number>();
+  dependencyMap.forEach((dependencyIds, operationId) => {
+    indegreeMap.set(operationId, dependencyIds.size);
+  });
+
+  const resolvedIds = new Set<string>();
+  const orderedOperations: PreparedMoveOperation[] = [];
+
+  while (resolvedIds.size < operations.length) {
+    const nextOperation = operations
+      .filter((operation) => !resolvedIds.has(operation.id) && (indegreeMap.get(operation.id) || 0) === 0)
+      .sort((left, right) => (indexByOperationId.get(left.id) || 0) - (indexByOperationId.get(right.id) || 0))[0];
+
+    if (!nextOperation) {
+      throw new Error('当前批量移动存在无法解析的操作依赖，请调整拖拽顺序后重试');
+    }
+
+    orderedOperations.push({
+      operation: nextOperation,
+      sourceNodeId: String(nextOperation.sourceNode.key),
+      targetParentId: targetParentIdByOperationId.get(nextOperation.id) ?? null,
+      dependsOnOperationIds: Array.from(dependencyMap.get(nextOperation.id) || []),
+      originalParentId: nextOperation.sourceNode.dataRef?.parentId ?? null,
+    });
+    resolvedIds.add(nextOperation.id);
+
+    dependencyMap.forEach((dependencyIds, operationId) => {
+      if (!resolvedIds.has(operationId) && dependencyIds.has(nextOperation.id)) {
+        indegreeMap.set(operationId, Math.max(0, (indegreeMap.get(operationId) || 0) - 1));
+      }
+    });
+  }
+
+  return orderedOperations;
+};
+
+const isTopologyTransferResponse = (
+  response: MetaCategoryBatchTransferResponseDto | MetaCategoryBatchTransferTopologyResponseDto,
+): response is MetaCategoryBatchTransferTopologyResponseDto => {
+  return 'resolvedOrder' in response || 'planningWarnings' in response || 'finalParentMappings' in response;
+};
+
+const collectFailedTransferMessages = (
+  response: MetaCategoryBatchTransferResponseDto | MetaCategoryBatchTransferTopologyResponseDto,
+): string[] => {
+  return response.results
+    .filter((result) => !result.success)
+    .map((result) => {
+      const operationId = 'operationId' in result
+        ? result.operationId
+        : result.clientOperationId || result.sourceNodeId;
+      const code = result.code || 'UNKNOWN_ERROR';
+      const message = result.message || '未提供失败原因';
+      return `${operationId}: ${code} - ${message}`;
+    });
+};
+
+const hasAtomicRollbackFailure = (
+  response: MetaCategoryBatchTransferResponseDto | MetaCategoryBatchTransferTopologyResponseDto,
+): boolean => {
+  return response.results.some(
+    (result) => result.code === 'ATOMIC_ROLLBACK' || result.code === 'ATOMIC_ABORTED',
+  );
 };
 
 export default function TransferWorkspace({
@@ -575,7 +722,7 @@ export default function TransferWorkspace({
   );
 
   const handleLoadTargetChildren = async (node: TransferTreeNode): Promise<void> => {
-    if (node.isLeaf || targetLoadedKeys.includes(node.key)) {
+    if (node.isLeaf || node.isVirtual || node.isPreviewNode || targetLoadedKeys.includes(node.key)) {
       return;
     }
 
@@ -701,7 +848,7 @@ export default function TransferWorkspace({
   };
 
   const buildBatchTransferRequest = (
-    actionType: 'move' | 'copy',
+    actionType: 'copy',
     dryRun: boolean,
   ): MetaCategoryBatchTransferRequestDto => {
     return {
@@ -719,14 +866,60 @@ export default function TransferWorkspace({
     };
   };
 
-  const executeBatchTransfer = async (actionType: 'move' | 'copy') => {
+  const buildTopologyBatchTransferRequest = (
+    preparedOperations: PreparedMoveOperation[],
+    dryRun: boolean,
+    options?: { includeExpectedSourceParentId?: boolean },
+  ): MetaCategoryBatchTransferTopologyRequestDto => {
+    return {
+      businessDomain,
+      action: 'MOVE',
+      dryRun,
+      atomic: true,
+      operator: 'admin',
+      planningMode: 'TOPOLOGY_AWARE',
+      orderingStrategy: 'CLIENT_ORDER',
+      strictDependencyValidation: true,
+      operations: preparedOperations.map(({ operation, sourceNodeId, targetParentId, dependsOnOperationIds, originalParentId }) => ({
+        operationId: operation.id,
+        sourceNodeId,
+        targetParentId,
+        dependsOnOperationIds,
+        allowDescendantFirstSplit: true,
+        expectedSourceParentId: options?.includeExpectedSourceParentId ? originalParentId : undefined,
+      })),
+    };
+  };
+
+  const getMoveOperationTitleMap = (preparedOperations: PreparedMoveOperation[]) => {
+    const titleMap = new Map<string, string>();
+    preparedOperations.forEach(({ operation, sourceNodeId }) => {
+      titleMap.set(operation.id, operation.sourceNode.title || sourceNodeId);
+    });
+    return titleMap;
+  };
+
+  const executeBatchTransfer = async (
+    actionType: 'move' | 'copy',
+    preparedMoveOperations?: PreparedMoveOperation[],
+  ) => {
     setLoading(true);
     try {
-      const response = await metaCategoryApi.batchTransferCategories(
-        buildBatchTransferRequest(actionType, false),
-      );
+      const resolvedPreparedMoveOperations =
+        actionType === 'move'
+          ? preparedMoveOperations || preparePendingMoveOperations(pendingOperations, virtualRelationMap)
+          : undefined;
+      const response = actionType === 'move'
+        ? await metaCategoryApi.batchTransferCategoriesWithTopology(
+            buildTopologyBatchTransferRequest(resolvedPreparedMoveOperations || [], false, {
+              includeExpectedSourceParentId: true,
+            }),
+          )
+        : await metaCategoryApi.batchTransferCategories(buildBatchTransferRequest('copy', false));
 
       const actionLabel = actionType === 'copy' ? '复制' : '移动';
+      const failedMessages = collectFailedTransferMessages(response);
+      const rollbackTriggered = hasAtomicRollbackFailure(response);
       if (response.failureCount > 0 && response.successCount > 0) {
         messageApi.warning(
           `${actionLabel}完成，成功 ${response.successCount} 项，失败 ${response.failureCount} 项`,
@@ -737,7 +930,26 @@ export default function TransferWorkspace({
         messageApi.success(`${actionLabel}成功，共处理 ${response.successCount} 项`);
       }
 
-      if (response.successCount > 0 || response.normalizedCount > 0) {
+      if (response.failureCount > 0) {
+        modal.error({
+          title: rollbackTriggered ? `${actionLabel}失败，事务已回滚` : `${actionLabel}失败`,
+          width: 640,
+          content: (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {rollbackTriggered && <div>后端已触发 atomic rollback，SQL 可能执行过但最终未提交。</div>}
+              {failedMessages.slice(0, 8).map((item) => (
+                <div key={item}>{item}</div>
+              ))}
+              {failedMessages.length > 8 && <div>其余 {failedMessages.length - 8} 条失败结果已省略。</div>}
+            </div>
+          ),
+        });
+      }
+
+      if (
+        response.successCount > 0 ||
+        (!isTopologyTransferResponse(response) && response.normalizedCount > 0)
+      ) {
         setPendingOperations([]);
         setPendingAction(null);
         setVirtualRelationMap({});
@@ -758,14 +970,30 @@ export default function TransferWorkspace({
 
     setLoading(true);
     try {
-      const dryRunResponse = await metaCategoryApi.batchTransferCategories(
-        buildBatchTransferRequest(actionType, true),
-      );
+      const preparedMoveOperations = actionType === 'move'
+        ? preparePendingMoveOperations(pendingOperations, virtualRelationMap)
+        : null;
+      const moveDryRunRequest = actionType === 'move' && preparedMoveOperations
+        ? buildTopologyBatchTransferRequest(preparedMoveOperations, true)
+        : null;
+      const dryRunResponse = actionType === 'move'
+        ? await metaCategoryApi.batchTransferCategoriesWithTopology(moveDryRunRequest!)
+        : await metaCategoryApi.batchTransferCategories(buildBatchTransferRequest('copy', true));
       const actionLabel = actionType === 'copy' ? '复制' : '移动';
       const failedResults = dryRunResponse.results.filter((result) => !result.success);
-      const normalizedResults = dryRunResponse.results.filter(
-        (result) => result.code === 'SOURCE_OVERLAP_NORMALIZED',
-      );
+      const normalizedResults = !isTopologyTransferResponse(dryRunResponse)
+        ? dryRunResponse.results.filter((result) => result.code === 'SOURCE_OVERLAP_NORMALIZED')
+        : [];
+      const planningWarnings = isTopologyTransferResponse(dryRunResponse)
+        ? dryRunResponse.planningWarnings || []
+        : dryRunResponse.warnings || [];
+      const moveOperationTitleMap =
+        actionType === 'move' && preparedMoveOperations
+          ? getMoveOperationTitleMap(preparedMoveOperations)
+          : new Map<string, string>();
+      const resolvedOrderPreview = isTopologyTransferResponse(dryRunResponse)
+        ? (dryRunResponse.resolvedOrder || []).slice(0, 5)
+        : [];
 
       if (failedResults.length > 0 || dryRunResponse.successCount === 0) {
         modal.error({
@@ -773,8 +1001,8 @@ export default function TransferWorkspace({
           width: 560,
           content: (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {failedResults.slice(0, 5).map((result) => (
-                <div key={result.clientOperationId || result.sourceNodeId}>
+              {failedResults.slice(0, 5).map((result, index) => (
+                <div key={`${result.sourceNodeId}-${index}`}>
                   {result.message || result.code || `源节点 ${result.sourceNodeId} 预检失败`}
                 </div>
               ))}
@@ -794,15 +1022,29 @@ export default function TransferWorkspace({
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <div>预检通过，共 {dryRunResponse.total} 项操作。</div>
             <div>预计成功 {dryRunResponse.successCount} 项。</div>
+              {isTopologyTransferResponse(dryRunResponse) && (
+                <div>
+                  服务端规划顺序 {dryRunResponse.resolvedOrder?.length || 0} 项，规划模式为{' '}
+                  {dryRunResponse.planningMode || 'TOPOLOGY_AWARE'}。
+                </div>
+              )}
+              {resolvedOrderPreview.map((operationId) => (
+                <div key={operationId}>
+                  执行顺序: {moveOperationTitleMap.get(operationId) || operationId}
+                </div>
+              ))}
+              {isTopologyTransferResponse(dryRunResponse) &&
+                (dryRunResponse.finalParentMappings?.length || 0) > 0 && (
+                  <div>最终父子映射已生成 {dryRunResponse.finalParentMappings?.length} 条，可用于与前端 virtualRelationMap 对账。</div>
+                )}
             {normalizedResults.length > 0 && (
               <div>存在 {normalizedResults.length} 项父子重叠操作，将由祖先节点自动归一化。</div>
             )}
-            {(dryRunResponse.warnings?.length || 0) > 0 &&
-              dryRunResponse.warnings?.map((warning) => <div key={warning}>{warning}</div>)}
+              {planningWarnings.map((warning) => <div key={warning}>{warning}</div>)}
           </div>
         ),
         onOk: async () => {
-          await executeBatchTransfer(actionType);
+          await executeBatchTransfer(actionType, preparedMoveOperations || undefined);
         },
       });
     } catch (error: any) {
@@ -843,22 +1085,36 @@ export default function TransferWorkspace({
 
   const displayTargetData = useMemo(() => {
     if (currentActionType === 'move') {
-      let currentData = targetData.map(cloneTransferTreeNode);
+      const pendingSourceKeySet = new Set<string>(
+        pendingOperations.map((operation) => String(operation.sourceNode.key)),
+      );
+      const orderedPendingOperations = preparePendingMoveOperations(
+        pendingOperations,
+        virtualRelationMap,
+      ).map((item) => item.operation);
+      let currentData = removeNodesFromTree(
+        targetData.map(cloneTransferTreeNode),
+        pendingSourceKeySet,
+      );
 
-      pendingOperations.forEach((operation) => {
+      orderedPendingOperations.forEach((operation) => {
         const virtualRelation = virtualRelationMap[String(operation.sourceNode.key)];
         const currentParentId = virtualRelation
           ? virtualRelation.currentParentId
           : operation.targetKey == null
             ? null
             : String(operation.targetKey);
-        const extracted = extractNodeFromTree(currentData, operation.sourceNode.key);
+        const canonicalSourceNode = pruneNestedPendingNodes(
+          cloneTransferTreeNode(operation.sourceNode),
+          String(operation.sourceNode.key),
+          pendingSourceKeySet,
+        );
         const movingNode = markMovedPreviewNode(
-          extracted.extractedNode ?? cloneTransferTreeNode(operation.sourceNode),
+          canonicalSourceNode ?? cloneTransferTreeNode(operation.sourceNode),
           currentParentId == null,
         );
 
-        currentData = insertNodeIntoTree(extracted.nextNodes, currentParentId, movingNode);
+        currentData = insertNodeIntoTree(currentData, currentParentId, movingNode);
       });
 
       return currentData;

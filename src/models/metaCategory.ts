@@ -257,3 +257,58 @@ export interface MetaCategoryBatchTransferResponseDto {
   warnings?: string[] | null;
   results: MetaCategoryBatchTransferResultDto[];
 }
+
+export type MetaCategoryBatchTransferTopologyAction = 'MOVE';
+export type MetaCategoryBatchTransferTopologyPlanningMode = 'TOPOLOGY_AWARE';
+export type MetaCategoryBatchTransferTopologyOrderingStrategy = 'CLIENT_ORDER';
+
+export interface MetaCategoryBatchTransferTopologyOperationDto {
+  operationId: string;
+  sourceNodeId: string;
+  targetParentId?: string | null;
+  dependsOnOperationIds?: string[];
+  allowDescendantFirstSplit?: boolean;
+  expectedSourceParentId?: string | null;
+}
+
+export interface MetaCategoryBatchTransferTopologyRequestDto {
+  businessDomain: string;
+  action: MetaCategoryBatchTransferTopologyAction;
+  dryRun?: boolean;
+  atomic?: true;
+  operator?: string | null;
+  planningMode?: MetaCategoryBatchTransferTopologyPlanningMode;
+  orderingStrategy?: MetaCategoryBatchTransferTopologyOrderingStrategy;
+  strictDependencyValidation?: boolean;
+  operations: MetaCategoryBatchTransferTopologyOperationDto[];
+}
+
+export interface MetaCategoryBatchTransferTopologyFinalParentMappingDto {
+  sourceNodeId: string;
+  finalParentId?: string | null;
+  dependsOnResolved?: string[] | null;
+}
+
+export interface MetaCategoryBatchTransferTopologyResultDto {
+  operationId: string;
+  sourceNodeId: string;
+  targetParentId?: string | null;
+  effectiveSourceParentIdBefore?: string | null;
+  effectiveTargetParentId?: string | null;
+  success: boolean;
+  code?: string | null;
+  message?: string | null;
+}
+
+export interface MetaCategoryBatchTransferTopologyResponseDto {
+  total: number;
+  successCount: number;
+  failureCount: number;
+  atomic: boolean;
+  dryRun: boolean;
+  planningMode?: MetaCategoryBatchTransferTopologyPlanningMode | string;
+  resolvedOrder?: string[] | null;
+  planningWarnings?: string[] | null;
+  finalParentMappings?: MetaCategoryBatchTransferTopologyFinalParentMappingDto[] | null;
+  results: MetaCategoryBatchTransferTopologyResultDto[];
+}

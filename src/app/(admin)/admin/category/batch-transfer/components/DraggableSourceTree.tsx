@@ -50,8 +50,16 @@ const SourceNodeTitle = ({
           disabled: isContextOnly || isMovedSource,
           dragging: isDragging,
         }),
-        color: isMovedSource ? token.colorTextSecondary : undefined,
-        opacity: isMovedSource && !isDragging ? 0.72 : undefined,
+        color: isContextOnly
+          ? token.colorTextDescription
+          : isMovedSource
+            ? token.colorTextSecondary
+            : undefined,
+        opacity: isContextOnly
+          ? 0.52
+          : isMovedSource && !isDragging
+            ? 0.72
+            : undefined,
       }}
     >
       <span
@@ -61,6 +69,7 @@ const SourceNodeTitle = ({
           whiteSpace: 'nowrap',
           textDecoration: isMovedSource ? 'line-through' : 'none',
           textDecorationThickness: isMovedSource ? 1.5 : undefined,
+          fontStyle: isContextOnly ? 'normal' : undefined,
         }}
       >
         {nodeData.title}

@@ -6,6 +6,8 @@ import type {
   MetaCategoryBatchDeleteResponseDto,
   MetaCategoryBatchTransferRequestDto,
   MetaCategoryBatchTransferResponseDto,
+  MetaCategoryBatchTransferTopologyRequestDto,
+  MetaCategoryBatchTransferTopologyResponseDto,
   MetaCategoryChildrenBatchRequestDto,
   MetaCategoryDetailDto,
   MetaCategoryNodeDto,
@@ -26,6 +28,8 @@ export type {
   MetaCategoryBatchDeleteResponseDto,
   MetaCategoryBatchTransferRequestDto,
   MetaCategoryBatchTransferResponseDto,
+  MetaCategoryBatchTransferTopologyRequestDto,
+  MetaCategoryBatchTransferTopologyResponseDto,
   MetaCategoryChildrenBatchRequestDto,
   MetaCategoryDetailDto,
   MetaCategoryNodeDto,
@@ -144,6 +148,12 @@ export const metaCategoryApi = {
     data: MetaCategoryBatchTransferRequestDto,
   ): Promise<MetaCategoryBatchTransferResponseDto> {
     return request.post(`${CATEGORY_BASE}/batch-transfer`, data);
+  },
+
+  batchTransferCategoriesWithTopology(
+    data: MetaCategoryBatchTransferTopologyRequestDto,
+  ): Promise<MetaCategoryBatchTransferTopologyResponseDto> {
+    return request.post(`${CATEGORY_BASE}/batch-transfer/topology`, data);
   },
 
   compareCategoryVersions(
