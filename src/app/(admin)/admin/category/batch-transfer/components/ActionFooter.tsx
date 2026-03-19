@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Button, Space, Typography, theme } from 'antd';
-import { SwapRightOutlined } from '@ant-design/icons';
+import { RedoOutlined, SwapRightOutlined, UndoOutlined } from '@ant-design/icons';
 
 const { Text } = Typography;
 
@@ -8,6 +8,12 @@ interface ActionFooterProps {
   pendingAction: 'move' | 'copy' | null;
   onConfirm: (actionType: 'move' | 'copy') => void;
   onCancel: () => void;
+  onUndo: () => void;
+  onRedo: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
+  currentStep: number;
+  totalSteps: number;
   loading?: boolean;
 }
 
@@ -15,9 +21,16 @@ export default function ActionFooter({
   pendingAction,
   onConfirm,
   onCancel,
+  onUndo,
+  onRedo,
+  canUndo,
+  canRedo,
+  currentStep,
+  totalSteps,
   loading = false
 }: ActionFooterProps) {
   const { token } = theme.useToken();
+  const stepLabel = `步骤 ${currentStep} / ${Math.max(totalSteps, 0)}`;
 
   return (
     <div
@@ -28,11 +41,22 @@ export default function ActionFooter({
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
+        gap: 12,
+        flexWrap: 'wrap',
         borderBottomLeftRadius: 12,
         borderBottomRightRadius: 12,
       }}
     >
-      <div>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+          minWidth: 0,
+          flex: '1 1 320px',
+          flexWrap: 'wrap',
+        }}
+      >
         {pendingAction ? (
           <Text type="secondary">
             当前处于 <Text strong style={{ color: pendingAction === 'copy' ? token.colorSuccess : token.colorPrimary }}>{pendingAction === 'copy' ? '复制' : '移动'}</Text> 待命状态，请确认。
@@ -40,9 +64,18 @@ export default function ActionFooter({
         ) : (
           <Text type="secondary">等待拖拽操作...</Text>
         )}
+        <Text type="secondary">
+          {stepLabel}
+        </Text>
       </div>
 
-      <Space>
+      <Space wrap style={{ justifyContent: 'flex-end', flex: '0 1 auto', rowGap: 8 }}>
+        <Button onClick={onUndo} disabled={loading || !canUndo} icon={<UndoOutlined />}>
+          上一步
+        </Button>
+        <Button onClick={onRedo} disabled={loading || !canRedo} icon={<RedoOutlined />}>
+          下一步
+        </Button>
         {pendingAction && (
           <Button onClick={onCancel} disabled={loading}>
             取消

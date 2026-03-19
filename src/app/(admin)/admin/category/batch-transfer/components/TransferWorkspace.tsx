@@ -87,6 +87,29 @@ interface PreparedMoveOperation {
   originalParentId: string | null;
 }
 
+interface WorkspaceSnapshot {
+  pendingAction: "move" | "copy" | null;
+  pendingOperations: PendingOperation[];
+  virtualRelationMap: Record<string, VirtualRelationEntry>;
+  targetExpandedKeys: React.Key[];
+}
+
+const createEmptyWorkspaceSnapshot = (): WorkspaceSnapshot => ({
+  pendingAction: null,
+  pendingOperations: [],
+  virtualRelationMap: {},
+  targetExpandedKeys: [],
+});
+
+const cloneWorkspaceSnapshot = (
+  snapshot: WorkspaceSnapshot,
+): WorkspaceSnapshot => ({
+  pendingAction: snapshot.pendingAction,
+  pendingOperations: [...snapshot.pendingOperations],
+  virtualRelationMap: { ...snapshot.virtualRelationMap },
+  targetExpandedKeys: [...snapshot.targetExpandedKeys],
+});
+
 interface VirtualRelationEntry {
   currentParentId: string | null;
   isVirtual: boolean;
@@ -386,20 +409,16 @@ const removeNodesFromTree = (
   });
 };
 
-const preparePendingMoveOperations = (
+const preparePreviewMoveOperations = (
   operations: PendingOperation[],
   virtualRelationMap: Record<string, VirtualRelationEntry>,
-): PreparedMoveOperation[] => {
-  const operationByNodeId = new Map<string, PendingOperation>();
-  const operationById = new Map<string, PendingOperation>();
+): PendingOperation[] => {
   const subtreeKeysByOperationId = new Map<string, Set<string>>();
   const dependencyMap = new Map<string, Set<string>>();
   const indexByOperationId = new Map<string, number>();
   const targetParentIdByOperationId = new Map<string, string | null>();
 
   operations.forEach((operation, index) => {
-    operationByNodeId.set(String(operation.sourceNode.key), operation);
-    operationById.set(operation.id, operation);
     subtreeKeysByOperationId.set(
       operation.id,
       collectSubtreeKeys(operation.sourceNode),
@@ -417,9 +436,7 @@ const preparePendingMoveOperations = (
     const currentParentId =
       targetParentIdByOperationId.get(operation.id) ?? null;
 
-    if (!currentParentId) {
-      // no target dependency for root placement
-    } else {
+    if (currentParentId) {
       operations.forEach((candidateOperation) => {
         if (candidateOperation.id === operation.id) {
           return;
@@ -434,7 +451,78 @@ const preparePendingMoveOperations = (
         }
       });
     }
+  });
 
+  const indegreeMap = new Map<string, number>();
+  dependencyMap.forEach((dependencyIds, operationId) => {
+    indegreeMap.set(operationId, dependencyIds.size);
+  });
+
+  const resolvedIds = new Set<string>();
+  const orderedOperations: PendingOperation[] = [];
+
+  while (resolvedIds.size < operations.length) {
+    const nextOperation = operations
+      .filter(
+        (operation) =>
+          !resolvedIds.has(operation.id) &&
+          (indegreeMap.get(operation.id) || 0) === 0,
+      )
+      .sort(
+        (left, right) =>
+          (indexByOperationId.get(left.id) || 0) -
+          (indexByOperationId.get(right.id) || 0),
+      )[0];
+
+    if (!nextOperation) {
+      return operations;
+    }
+
+    orderedOperations.push(nextOperation);
+    resolvedIds.add(nextOperation.id);
+
+    dependencyMap.forEach((dependencyIds, operationId) => {
+      if (
+        !resolvedIds.has(operationId) &&
+        dependencyIds.has(nextOperation.id)
+      ) {
+        indegreeMap.set(
+          operationId,
+          Math.max(0, (indegreeMap.get(operationId) || 0) - 1),
+        );
+      }
+    });
+  }
+
+  return orderedOperations;
+};
+
+const prepareTopologyMoveOperations = (
+  operations: PendingOperation[],
+  virtualRelationMap: Record<string, VirtualRelationEntry>,
+): PreparedMoveOperation[] => {
+  const operationById = new Map<string, PendingOperation>();
+  const subtreeKeysByOperationId = new Map<string, Set<string>>();
+  const dependencyMap = new Map<string, Set<string>>();
+  const indexByOperationId = new Map<string, number>();
+  const targetParentIdByOperationId = new Map<string, string | null>();
+
+  operations.forEach((operation, index) => {
+    operationById.set(operation.id, operation);
+    subtreeKeysByOperationId.set(
+      operation.id,
+      collectSubtreeKeys(operation.sourceNode),
+    );
+    dependencyMap.set(operation.id, new Set());
+    indexByOperationId.set(operation.id, index);
+    targetParentIdByOperationId.set(
+      operation.id,
+      virtualRelationMap[String(operation.sourceNode.key)]?.currentParentId ??
+        (operation.targetKey == null ? null : String(operation.targetKey)),
+    );
+  });
+
+  operations.forEach((operation) => {
     const currentOperationSubtreeKeys = subtreeKeysByOperationId.get(
       operation.id,
     );
@@ -619,6 +707,10 @@ export default function TransferWorkspace({
   const [virtualRelationMap, setVirtualRelationMap] = useState<
     Record<string, VirtualRelationEntry>
   >({});
+    const [workspaceHistory, setWorkspaceHistory] = useState<WorkspaceSnapshot[]>([
+      createEmptyWorkspaceSnapshot(),
+    ]);
+    const [workspaceHistoryIndex, setWorkspaceHistoryIndex] = useState(0);
   const [
     shouldAnimateDragOverlayDropBack,
     setShouldAnimateDragOverlayDropBack,
@@ -648,6 +740,34 @@ export default function TransferWorkspace({
   const rootDropDisabled = useMemo(() => {
     return currentActionType === "move" && isRootCategoryNode(activeDragNode);
   }, [activeDragNode, currentActionType]);
+
+  const canUndo = workspaceHistoryIndex > 0;
+  const canRedo = workspaceHistoryIndex < workspaceHistory.length - 1;
+
+  const applyWorkspaceSnapshot = (snapshot: WorkspaceSnapshot) => {
+    const nextSnapshot = cloneWorkspaceSnapshot(snapshot);
+    setPendingAction(nextSnapshot.pendingAction);
+    setPendingOperations(nextSnapshot.pendingOperations);
+    setVirtualRelationMap(nextSnapshot.virtualRelationMap);
+    setTargetExpandedKeys(nextSnapshot.targetExpandedKeys);
+    setHoveredMovedSourceKey(null);
+  };
+
+  const pushWorkspaceSnapshot = (snapshot: WorkspaceSnapshot) => {
+    const nextSnapshot = cloneWorkspaceSnapshot(snapshot);
+    setWorkspaceHistory((prev) => {
+      const trimmedHistory = prev.slice(0, workspaceHistoryIndex + 1);
+      return [...trimmedHistory, nextSnapshot];
+    });
+    setWorkspaceHistoryIndex((prev) => prev + 1);
+  };
+
+  const resetWorkspaceSnapshots = () => {
+    const emptySnapshot = createEmptyWorkspaceSnapshot();
+    setWorkspaceHistory([emptySnapshot]);
+    setWorkspaceHistoryIndex(0);
+    applyWorkspaceSnapshot(emptySnapshot);
+  };
 
   const transferNodeLookup = useMemo(() => {
     const lookup = collectNodeMap(targetData);
@@ -726,6 +846,7 @@ export default function TransferWorkspace({
 
     setSourceData(nextSourceData);
     setSourceExpandedKeys(nextExpandedKeys);
+    resetWorkspaceSnapshots();
   }, [sourceNodesData]);
 
   useEffect(() => {
@@ -1013,40 +1134,75 @@ export default function TransferWorkspace({
     };
     const resolvedAction = pendingAction || initialAction || "move";
 
-    setPendingOperations((prev) => {
-      if (resolvedAction === "move") {
-        const next = prev.filter(
-          (item) => item.sourceNode.key !== draggedNode.key,
-        );
-        return [...next, nextOperation];
-      }
-      return [...prev, nextOperation];
-    });
-    if (resolvedAction === "move") {
-      setVirtualRelationMap((prev) => ({
-        ...prev,
-        [String(draggedNode.key)]: {
-          currentParentId:
-            resolvedTargetKey == null ? null : String(resolvedTargetKey),
-          isVirtual: true,
-        },
-      }));
-    }
-    if (resolvedTargetKey) {
-      setTargetExpandedKeys((prev) =>
-        Array.from(new Set([...prev, resolvedTargetKey])),
-      );
-    }
+    const nextPendingOperations =
+      resolvedAction === "move"
+        ? [
+            ...pendingOperations.filter(
+              (item) => item.sourceNode.key !== draggedNode.key,
+            ),
+            nextOperation,
+          ]
+        : [...pendingOperations, nextOperation];
+    const nextVirtualRelationMap =
+      resolvedAction === "move"
+        ? {
+            ...virtualRelationMap,
+            [String(draggedNode.key)]: {
+              currentParentId:
+                resolvedTargetKey == null ? null : String(resolvedTargetKey),
+              isVirtual: true,
+            },
+          }
+        : virtualRelationMap;
+    const nextTargetExpandedKeys = resolvedTargetKey
+      ? Array.from(new Set([...targetExpandedKeys, resolvedTargetKey]))
+      : targetExpandedKeys;
+    const nextPendingAction = pendingAction || initialAction || "move";
+    const nextSnapshot: WorkspaceSnapshot = {
+      pendingAction: nextPendingAction,
+      pendingOperations: nextPendingOperations,
+      virtualRelationMap: nextVirtualRelationMap,
+      targetExpandedKeys: nextTargetExpandedKeys,
+    };
 
-    if (!pendingAction) {
-      setPendingAction(initialAction || "move");
-    }
+    applyWorkspaceSnapshot(nextSnapshot);
+    pushWorkspaceSnapshot(nextSnapshot);
   };
 
   const handleDragCancel = (_event: DragCancelEvent) => {
     setShouldAnimateDragOverlayDropBack(true);
     commitHoveredTarget(null, "目标分类");
     setActiveDragNode(null);
+  };
+
+  const handleUndo = () => {
+    if (!canUndo) {
+      return;
+    }
+
+    const nextIndex = workspaceHistoryIndex - 1;
+    const snapshot = workspaceHistory[nextIndex];
+    if (!snapshot) {
+      return;
+    }
+
+    setWorkspaceHistoryIndex(nextIndex);
+    applyWorkspaceSnapshot(snapshot);
+  };
+
+  const handleRedo = () => {
+    if (!canRedo) {
+      return;
+    }
+
+    const nextIndex = workspaceHistoryIndex + 1;
+    const snapshot = workspaceHistory[nextIndex];
+    if (!snapshot) {
+      return;
+    }
+
+    setWorkspaceHistoryIndex(nextIndex);
+    applyWorkspaceSnapshot(snapshot);
   };
 
   const buildBatchTransferRequest = (
@@ -1123,7 +1279,7 @@ export default function TransferWorkspace({
       const resolvedPreparedMoveOperations =
         actionType === "move"
           ? preparedMoveOperations ||
-            preparePendingMoveOperations(pendingOperations, virtualRelationMap)
+            prepareTopologyMoveOperations(pendingOperations, virtualRelationMap)
           : undefined;
       const response =
         actionType === "move"
@@ -1188,6 +1344,8 @@ export default function TransferWorkspace({
         setPendingOperations([]);
         setPendingAction(null);
         setVirtualRelationMap({});
+        setWorkspaceHistory([createEmptyWorkspaceSnapshot()]);
+        setWorkspaceHistoryIndex(0);
         onComplete?.(response);
       }
     } catch (error: any) {
@@ -1212,7 +1370,7 @@ export default function TransferWorkspace({
     try {
       const preparedMoveOperations =
         actionType === "move"
-          ? preparePendingMoveOperations(pendingOperations, virtualRelationMap)
+          ? prepareTopologyMoveOperations(pendingOperations, virtualRelationMap)
           : null;
       const moveDryRunRequest =
         actionType === "move" && preparedMoveOperations
@@ -1324,10 +1482,8 @@ export default function TransferWorkspace({
   };
 
   const handleCancel = () => {
-    setPendingAction(null);
-    setPendingOperations([]);
     setHoveredMovedSourceKey(null);
-    setVirtualRelationMap({});
+    resetWorkspaceSnapshots();
   };
 
   useEffect(() => {
@@ -1357,10 +1513,10 @@ export default function TransferWorkspace({
       const pendingSourceKeySet = new Set<string>(
         pendingOperations.map((operation) => String(operation.sourceNode.key)),
       );
-      const orderedPendingOperations = preparePendingMoveOperations(
+      const orderedPendingOperations = preparePreviewMoveOperations(
         pendingOperations,
         virtualRelationMap,
-      ).map((item) => item.operation);
+      );
       let currentData = removeNodesFromTree(
         targetData.map(cloneTransferTreeNode),
         pendingSourceKeySet,
@@ -1638,6 +1794,12 @@ export default function TransferWorkspace({
           pendingAction={pendingAction}
           onConfirm={handleConfirm}
           onCancel={handleCancel}
+          canUndo={canUndo}
+          canRedo={canRedo}
+          onUndo={handleUndo}
+          onRedo={handleRedo}
+          currentStep={workspaceHistoryIndex}
+          totalSteps={workspaceHistory.length - 1}
           loading={spinning}
         />
       </div>
