@@ -13,6 +13,7 @@ import {
   useSensor,
   useSensors,
   type CollisionDetection,
+  type DragCancelEvent,
   type DragEndEvent,
   type DragOverEvent,
   type DragStartEvent,
@@ -42,6 +43,7 @@ import {
 
 const TARGET_ROOT_PAGE_SIZE = 200;
 const DEFAULT_LIST_STATUS = 'ALL';
+const HOVER_TARGET_COMMIT_DELAY = 140; // ms，基于经验值调整，旨在平衡响应速度和避免过度频繁更新悬停目标导致的视觉干扰
 const ROOT_DROP_TARGET_KEY = '__ROOT_DROP_TARGET__';
 const ROOT_DROP_TARGET_TITLE = '根分类';
 const ROOT_DROP_TARGET_DROPPABLE_ID = `tgt-${ROOT_DROP_TARGET_KEY}`;
@@ -50,6 +52,9 @@ const DEFAULT_COPY_OPTIONS = {
   codePolicy: 'AUTO_SUFFIX' as const,
   namePolicy: 'KEEP' as const,
   defaultStatus: 'DRAFT' as const,
+};
+const DEFAULT_DRAG_OVERLAY_DROP_ANIMATION = {
+  sideEffects: defaultDropAnimationSideEffects({ styles: { active: { opacity: '0.4' } } }),
 };
 
 export interface TransferTreeNode {
@@ -530,6 +535,7 @@ export default function TransferWorkspace({
   const [pendingAction, setPendingAction] = useState<'move' | 'copy' | null>(null);
   const [activeDragNode, setActiveDragNode] = useState<TransferTreeNode | null>(null);
   const [pendingOperations, setPendingOperations] = useState<PendingOperation[]>([]);
+  const [liveHoveredTargetKey, setLiveHoveredTargetKey] = useState<React.Key | null>(null);
   const [hoveredTargetKey, setHoveredTargetKey] = useState<React.Key | null>(null);
   const [hoveredTargetTitle, setHoveredTargetTitle] = useState<string>('目标分类');
   const [hoveredMovedSourceKey, setHoveredMovedSourceKey] = useState<React.Key | null>(null);
@@ -539,8 +545,14 @@ export default function TransferWorkspace({
   const [targetExpandedKeys, setTargetExpandedKeys] = useState<React.Key[]>([]);
   const [targetLoadedKeys, setTargetLoadedKeys] = useState<React.Key[]>([]);
   const [virtualRelationMap, setVirtualRelationMap] = useState<Record<string, VirtualRelationEntry>>({});
+  const [shouldAnimateDragOverlayDropBack, setShouldAnimateDragOverlayDropBack] = useState(true);
   const targetScrollViewportRef = useRef<HTMLDivElement | null>(null);
   const rootDropTargetRef = useRef<HTMLDivElement | null>(null);
+  const hoverTargetCommitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingHoverTargetRef = useRef<{ key: React.Key | null; title: string }>({
+    key: null,
+    title: '目标分类',
+  });
 
   const overlayActionLabel = useMemo(() => {
     const action = pendingAction || initialAction || 'move';
@@ -745,20 +757,49 @@ export default function TransferWorkspace({
     setTargetLoadedKeys((keys) => (keys.includes(node.key) ? keys : [...keys, node.key]));
   };
 
+  const clearHoverTargetCommitTimer = () => {
+    if (hoverTargetCommitTimerRef.current) {
+      clearTimeout(hoverTargetCommitTimerRef.current);
+      hoverTargetCommitTimerRef.current = null;
+    }
+  };
+
+  const commitHoveredTarget = (key: React.Key | null, title: string) => {
+    clearHoverTargetCommitTimer();
+    pendingHoverTargetRef.current = { key, title };
+    setLiveHoveredTargetKey((previousKey) => (previousKey === key ? previousKey : key));
+    setHoveredTargetKey((previousKey) => (previousKey === key ? previousKey : key));
+    setHoveredTargetTitle((previousTitle) => (previousTitle === title ? previousTitle : title));
+  };
+
+  const scheduleHoveredTargetCommit = (key: React.Key | null, title: string) => {
+    const pendingHoverTarget = pendingHoverTargetRef.current;
+    if (pendingHoverTarget.key === key && pendingHoverTarget.title === title) {
+      return;
+    }
+
+    clearHoverTargetCommitTimer();
+    pendingHoverTargetRef.current = { key, title };
+    hoverTargetCommitTimerRef.current = setTimeout(() => {
+      setHoveredTargetKey((previousKey) => (previousKey === key ? previousKey : key));
+      setHoveredTargetTitle((previousTitle) => (previousTitle === title ? previousTitle : title));
+      hoverTargetCommitTimerRef.current = null;
+    }, HOVER_TARGET_COMMIT_DELAY);
+  };
+
   const handleDragStart = (event: DragStartEvent) => {
     const nodeData = event.active.data.current as TransferTreeNode | undefined;
     if (!nodeData) return;
 
-    setHoveredTargetKey(null);
-    setHoveredTargetTitle('目标分类');
+    setShouldAnimateDragOverlayDropBack(true);
+    commitHoveredTarget(null, '目标分类');
     setActiveDragNode(nodeData);
   };
 
   const handleDragOver = (event: DragOverEvent) => {
     const overNode = event.over?.data.current as TransferTreeNode | undefined;
     if (!overNode) {
-      setHoveredTargetKey(null);
-      setHoveredTargetTitle('目标分类');
+      commitHoveredTarget(null, '目标分类');
       return;
     }
 
@@ -766,14 +807,22 @@ export default function TransferWorkspace({
       (overNode.key === ROOT_DROP_TARGET_KEY && rootDropDisabled) ||
       (overNode.key !== ROOT_DROP_TARGET_KEY && disabledKeys.includes(overNode.key))
     ) {
-      setHoveredTargetKey(null);
-      setHoveredTargetTitle('目标分类');
+      commitHoveredTarget(null, '目标分类');
       return;
     }
 
-    setHoveredTargetKey(overNode.key);
-    setHoveredTargetTitle(overNode.key === ROOT_DROP_TARGET_KEY ? ROOT_DROP_TARGET_TITLE : overNode.title || '目标分类');
+    setLiveHoveredTargetKey((previousKey) => (previousKey === overNode.key ? previousKey : overNode.key));
+    scheduleHoveredTargetCommit(
+      overNode.key,
+      overNode.key === ROOT_DROP_TARGET_KEY ? ROOT_DROP_TARGET_TITLE : overNode.title || '目标分类',
+    );
   };
+
+  useEffect(() => {
+    return () => {
+      clearHoverTargetCommitTimer();
+    };
+  }, []);
 
   useEffect(() => {
     if (
@@ -799,18 +848,18 @@ export default function TransferWorkspace({
 
   const handleDragEnd = (event: DragEndEvent) => {
     const overNode = event.over?.data.current as TransferTreeNode | undefined;
-    setHoveredTargetKey(null);
-    setHoveredTargetTitle('目标分类');
-
     const draggedNode = activeDragNode;
-    setActiveDragNode(null);
-
-    if (
+    const isInvalidDrop =
       !overNode ||
       !draggedNode ||
       (overNode.key === ROOT_DROP_TARGET_KEY && rootDropDisabled) ||
-      (overNode.key !== ROOT_DROP_TARGET_KEY && disabledKeys.includes(overNode.key))
-    ) {
+      (overNode.key !== ROOT_DROP_TARGET_KEY && disabledKeys.includes(overNode.key));
+
+    setShouldAnimateDragOverlayDropBack(isInvalidDrop);
+    commitHoveredTarget(null, '目标分类');
+    setActiveDragNode(null);
+
+    if (isInvalidDrop) {
       return;
     }
 
@@ -845,6 +894,12 @@ export default function TransferWorkspace({
     if (!pendingAction) {
       setPendingAction(initialAction || 'move');
     }
+  };
+
+  const handleDragCancel = (_event: DragCancelEvent) => {
+    setShouldAnimateDragOverlayDropBack(true);
+    commitHoveredTarget(null, '目标分类');
+    setActiveDragNode(null);
   };
 
   const buildBatchTransferRequest = (
@@ -1186,6 +1241,7 @@ export default function TransferWorkspace({
           autoScroll={false}
           onDragStart={handleDragStart}
           onDragOver={handleDragOver}
+          onDragCancel={handleDragCancel}
           onDragEnd={handleDragEnd}
         >
           <Row style={{ flex: 1, height: '100%', minHeight: 0, overflow: 'hidden' }} gutter={0}>
@@ -1249,7 +1305,7 @@ export default function TransferWorkspace({
                     .map((operation) => operation.targetKey)
                     .filter((key): key is React.Key => key != null)}
                   rootPendingCount={pendingOperations.filter((operation) => operation.targetKey == null).length}
-                  hoveredTargetKey={hoveredTargetKey}
+                  hoveredTargetKey={liveHoveredTargetKey}
                   rootDropTargetKey={ROOT_DROP_TARGET_KEY}
                   rootDropTargetTitle={ROOT_DROP_TARGET_TITLE}
                   rootDropDisabled={rootDropDisabled}
@@ -1265,9 +1321,7 @@ export default function TransferWorkspace({
             ? createPortal(
                 <DragOverlay
                   zIndex={DRAG_OVERLAY_Z_INDEX}
-                  dropAnimation={{
-                    sideEffects: defaultDropAnimationSideEffects({ styles: { active: { opacity: '0.4' } } }),
-                  }}
+                  dropAnimation={shouldAnimateDragOverlayDropBack ? DEFAULT_DRAG_OVERLAY_DROP_ANIMATION : null}
                 >
                   {activeDragNode ? (
                     <div style={getTransferNodeOverlayShellStyle(token)}>
