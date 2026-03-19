@@ -28,6 +28,9 @@ import type {
 } from "@/models/metaCategory";
 import { metaCategoryApi } from "@/services/metaCategory";
 import ActionFooter from "./ActionFooter";
+import BatchTransferDryRunPanel, {
+  type DryRunTimelineItem,
+} from "./BatchTransferDryRunPanel";
 import DraggableSourceTree from "./DraggableSourceTree";
 import DropTargetTree from "./DropTargetTree";
 import { DRAG_OVERLAY_Z_INDEX, dndTreeGlobalStyles } from "./dnd-tree-styles";
@@ -58,6 +61,9 @@ const DEFAULT_DRAG_OVERLAY_DROP_ANIMATION = {
     styles: { active: { opacity: "0.4" } },
   }),
 };
+const DRY_RUN_MODAL_WIDTH = "40vw";
+const DRY_RUN_MODAL_HEIGHT = "48vh";
+const DRY_RUN_MODAL_CLASS = "batch-transfer-dry-run-modal";
 
 export interface TransferTreeNode {
   key: string;
@@ -675,6 +681,18 @@ export default function TransferWorkspace({
         overflow: auto;
         padding: 24px;
       }
+      .${DRY_RUN_MODAL_CLASS} .ant-modal-confirm-body {
+        display: block;
+      }
+      .${DRY_RUN_MODAL_CLASS} .ant-modal-confirm-paragraph {
+        max-width: none;
+        width: 100%;
+      }
+      .${DRY_RUN_MODAL_CLASS} .ant-modal-confirm-content {
+        max-width: none;
+        width: 100%;
+        margin-top: 12px;
+      }
     `,
     [],
   );
@@ -1270,9 +1288,106 @@ export default function TransferWorkspace({
     return titleMap;
   };
 
+  const getNodeDisplayTitle = (
+    nodeId?: string | null,
+    fallback?: string,
+  ): string => {
+    if (nodeId == null) {
+      return ROOT_DROP_TARGET_TITLE;
+    }
+
+    return transferNodeLookup.get(String(nodeId))?.title || fallback || nodeId;
+  };
+
+  const buildPendingOperationSummaries = (
+    actionType: "move" | "copy",
+    preparedOperations?: PreparedMoveOperation[] | null,
+  ) => {
+    if (actionType === "move" && preparedOperations?.length) {
+      const operationTitleMap = getMoveOperationTitleMap(preparedOperations);
+
+      return preparedOperations.map(
+        ({ operation, targetParentId, dependsOnOperationIds }, index) => ({
+          key: operation.id,
+          title: `${index + 1}. ${operation.sourceNode.title} -> ${getNodeDisplayTitle(targetParentId)}`,
+          detail:
+            dependsOnOperationIds.length > 0
+              ? `需等待 ${dependsOnOperationIds
+                  .map(
+                    (operationId) =>
+                      operationTitleMap.get(operationId) || operationId,
+                  )
+                  .join("、")} 先完成`
+              : "可直接执行",
+        }),
+      );
+    }
+
+    return pendingOperations.map((operation, index) => ({
+      key: operation.id,
+      title: `${index + 1}. ${operation.sourceNode.title} -> ${getNodeDisplayTitle(
+        operation.targetKey == null ? null : String(operation.targetKey),
+      )}`,
+      detail: actionType === "copy" ? "复制后保留原节点" : "等待执行",
+    }));
+  };
+
+  const buildFailedIssueSummaries = (
+    results: Array<
+      | MetaCategoryBatchTransferResponseDto["results"][number]
+      | MetaCategoryBatchTransferTopologyResponseDto["results"][number]
+    >,
+  ): DryRunTimelineItem[] => {
+    return results.map((result, index) => {
+      const sourceTitle = getNodeDisplayTitle(
+        result.sourceNodeId,
+        result.sourceNodeId,
+      );
+      const targetTitle = getNodeDisplayTitle(result.targetParentId ?? null);
+
+      return {
+        key:
+          ("operationId" in result ? result.operationId : undefined) ||
+          `${result.sourceNodeId}-${index}`,
+        title: `${sourceTitle} -> ${targetTitle}`,
+        detail:
+          result.message ||
+          result.code ||
+          `源节点 ${result.sourceNodeId} 预检失败`,
+        color: "red",
+      };
+    });
+  };
+
+  const buildResolvedOrderSummaries = (
+    resolvedOrder: string[],
+    moveOperationTitleMap: Map<string, string>,
+  ): DryRunTimelineItem[] => {
+    return resolvedOrder.map((operationId, index) => ({
+      key: operationId,
+      title: `${index + 1}. ${moveOperationTitleMap.get(operationId) || operationId}`,
+      detail: "服务端建议按此顺序执行",
+      color: "blue",
+    }));
+  };
+
+  const buildFinalPlacementSummaries = (
+    mappings: NonNullable<
+      MetaCategoryBatchTransferTopologyResponseDto["finalParentMappings"]
+    >,
+  ): DryRunTimelineItem[] => {
+    return mappings.map((mapping) => ({
+      key: mapping.sourceNodeId,
+      title: getNodeDisplayTitle(mapping.sourceNodeId, mapping.sourceNodeId),
+      detail: `最终位于 ${getNodeDisplayTitle(mapping.finalParentId ?? null)} 下`,
+      color: "green",
+    }));
+  };
+
   const executeBatchTransfer = async (
     actionType: "move" | "copy",
     preparedMoveOperations?: PreparedMoveOperation[],
+    options?: { showFailureModal?: boolean; skipCompleteCallback?: boolean },
   ) => {
     setLoading(true);
     try {
@@ -1313,11 +1428,12 @@ export default function TransferWorkspace({
         );
       }
 
-      if (response.failureCount > 0) {
+      if (response.failureCount > 0 && options?.showFailureModal !== false) {
         modal.error({
           title: rollbackTriggered
             ? `${actionLabel}失败，事务已回滚`
             : `${actionLabel}失败`,
+          icon: null,
           width: 640,
           content: (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -1346,8 +1462,12 @@ export default function TransferWorkspace({
         setVirtualRelationMap({});
         setWorkspaceHistory([createEmptyWorkspaceSnapshot()]);
         setWorkspaceHistoryIndex(0);
-        onComplete?.(response);
+        if (!options?.skipCompleteCallback) {
+          onComplete?.(response);
+        }
       }
+
+      return response;
     } catch (error: any) {
       messageApi.error(
         getErrorMessage(
@@ -1400,78 +1520,220 @@ export default function TransferWorkspace({
         actionType === "move" && preparedMoveOperations
           ? getMoveOperationTitleMap(preparedMoveOperations)
           : new Map<string, string>();
+      const pendingOperationSummaries = buildPendingOperationSummaries(
+        actionType,
+        preparedMoveOperations,
+      );
       const resolvedOrderPreview = isTopologyTransferResponse(dryRunResponse)
-        ? (dryRunResponse.resolvedOrder || []).slice(0, 5)
+        ? dryRunResponse.resolvedOrder || []
         : [];
+      const finalParentMappingPreview = isTopologyTransferResponse(dryRunResponse)
+        ? dryRunResponse.finalParentMappings || []
+        : [];
+      const failedIssueSummaries = buildFailedIssueSummaries(failedResults);
+      const resolvedOrderSummaries = buildResolvedOrderSummaries(
+        resolvedOrderPreview,
+        moveOperationTitleMap,
+      );
+      const finalPlacementSummaries = buildFinalPlacementSummaries(
+        finalParentMappingPreview,
+      );
 
       if (failedResults.length > 0 || dryRunResponse.successCount === 0) {
         modal.error({
           title: `${actionLabel}预检未通过`,
-          width: 560,
+          icon: null,
+          className: DRY_RUN_MODAL_CLASS,
+          width: DRY_RUN_MODAL_WIDTH,
+          centered: true,
           content: (
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {failedResults.slice(0, 5).map((result, index) => (
-                <div key={`${result.sourceNodeId}-${index}`}>
-                  {result.message ||
-                    result.code ||
-                    `源节点 ${result.sourceNodeId} 预检失败`}
-                </div>
-              ))}
-              {failedResults.length === 0 && (
-                <div>预检未通过，请检查拖拽目标是否有效。</div>
-              )}
-            </div>
+            <BatchTransferDryRunPanel
+              actionLabel={actionLabel}
+              status="failed"
+              total={dryRunResponse.total}
+              successCount={dryRunResponse.successCount}
+              planningMode={
+                isTopologyTransferResponse(dryRunResponse)
+                  ? dryRunResponse.planningMode || "TOPOLOGY_AWARE"
+                  : undefined
+              }
+              normalizedCount={normalizedResults.length}
+              pendingOperations={pendingOperationSummaries}
+              resolvedOrder={resolvedOrderSummaries}
+              finalPlacements={finalPlacementSummaries}
+              failedIssues={failedIssueSummaries}
+              warnings={planningWarnings}
+              height={DRY_RUN_MODAL_HEIGHT}
+            />
           ),
         });
         return;
       }
 
-      modal.confirm({
+      const confirmModal = modal.confirm({
         title: `确认${actionLabel}`,
+        icon: null,
+        className: DRY_RUN_MODAL_CLASS,
         okText: `确认${actionLabel}`,
         cancelText: "取消",
-        width: 560,
+        width: DRY_RUN_MODAL_WIDTH,
+        centered: true,
+        maskClosable: true,
         content: (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <div>预检通过，共 {dryRunResponse.total} 项操作。</div>
-            <div>预计成功 {dryRunResponse.successCount} 项。</div>
-            {isTopologyTransferResponse(dryRunResponse) && (
-              <div>
-                服务端规划顺序 {dryRunResponse.resolvedOrder?.length || 0}{" "}
-                项，规划模式为 {dryRunResponse.planningMode || "TOPOLOGY_AWARE"}
-                。
-              </div>
-            )}
-            {resolvedOrderPreview.map((operationId) => (
-              <div key={operationId}>
-                执行顺序:{" "}
-                {moveOperationTitleMap.get(operationId) || operationId}
-              </div>
-            ))}
-            {isTopologyTransferResponse(dryRunResponse) &&
-              (dryRunResponse.finalParentMappings?.length || 0) > 0 && (
-                <div>
-                  最终父子映射已生成{" "}
-                  {dryRunResponse.finalParentMappings?.length} 条，可用于与前端
-                  virtualRelationMap 对账。
-                </div>
-              )}
-            {normalizedResults.length > 0 && (
-              <div>
-                存在 {normalizedResults.length}{" "}
-                项父子重叠操作，将由祖先节点自动归一化。
-              </div>
-            )}
-            {planningWarnings.map((warning) => (
-              <div key={warning}>{warning}</div>
-            ))}
-          </div>
+          <BatchTransferDryRunPanel
+            actionLabel={actionLabel}
+            status="passed"
+            total={dryRunResponse.total}
+            successCount={dryRunResponse.successCount}
+            planningMode={
+              isTopologyTransferResponse(dryRunResponse)
+                ? dryRunResponse.planningMode || "TOPOLOGY_AWARE"
+                : undefined
+            }
+            normalizedCount={normalizedResults.length}
+            pendingOperations={pendingOperationSummaries}
+            resolvedOrder={resolvedOrderSummaries}
+            finalPlacements={finalPlacementSummaries}
+            failedIssues={failedIssueSummaries}
+            warnings={planningWarnings}
+            height={DRY_RUN_MODAL_HEIGHT}
+          />
         ),
-        onOk: async () => {
-          await executeBatchTransfer(
-            actionType,
-            preparedMoveOperations || undefined,
-          );
+        onOk: (close) => {
+          const closeResultModal = (response?:
+            | MetaCategoryBatchTransferResponseDto
+            | MetaCategoryBatchTransferTopologyResponseDto,
+          ) => {
+            if (response) {
+              onComplete?.(response);
+            }
+            if (typeof close === "function") {
+              close();
+            } else {
+              confirmModal.destroy();
+            }
+          };
+
+          confirmModal.update({
+            title: `正在${actionLabel}`,
+            closable: false,
+            maskClosable: false,
+            cancelButtonProps: { style: { display: "none" } },
+            okButtonProps: { style: { display: "none" } },
+            content: (
+              <BatchTransferDryRunPanel
+                actionLabel={actionLabel}
+                status="passed"
+                total={dryRunResponse.total}
+                successCount={dryRunResponse.successCount}
+                planningMode={
+                  isTopologyTransferResponse(dryRunResponse)
+                    ? dryRunResponse.planningMode || "TOPOLOGY_AWARE"
+                    : undefined
+                }
+                normalizedCount={normalizedResults.length}
+                pendingOperations={pendingOperationSummaries}
+                resolvedOrder={resolvedOrderSummaries}
+                finalPlacements={finalPlacementSummaries}
+                failedIssues={failedIssueSummaries}
+                warnings={planningWarnings}
+                height={DRY_RUN_MODAL_HEIGHT}
+                executionStage="processing"
+                executionSummary={`服务端正在处理 ${pendingOperationSummaries.length} 项批量${actionLabel}操作。`}
+              />
+            ),
+          });
+
+          void (async () => {
+            try {
+              const response = await executeBatchTransfer(
+                actionType,
+                preparedMoveOperations || undefined,
+                { showFailureModal: false, skipCompleteCallback: true },
+              );
+              const isFailed = !response || response.failureCount > 0;
+
+              confirmModal.update({
+                title: isFailed ? `${actionLabel}执行结果` : `${actionLabel}完成`,
+                closable: true,
+                maskClosable: true,
+                okText: "关闭",
+                cancelButtonProps: { style: { display: "none" } },
+                okButtonProps: { loading: false },
+                onOk: () => {
+                  closeResultModal(!isFailed ? response : undefined);
+                },
+                onCancel: () => {
+                  closeResultModal(!isFailed ? response : undefined);
+                },
+                content: (
+                  <BatchTransferDryRunPanel
+                    actionLabel={actionLabel}
+                    status={isFailed ? "failed" : "passed"}
+                    total={dryRunResponse.total}
+                    successCount={response?.successCount || 0}
+                    planningMode={
+                      isTopologyTransferResponse(dryRunResponse)
+                        ? dryRunResponse.planningMode || "TOPOLOGY_AWARE"
+                        : undefined
+                    }
+                    normalizedCount={normalizedResults.length}
+                    pendingOperations={pendingOperationSummaries}
+                    resolvedOrder={resolvedOrderSummaries}
+                    finalPlacements={finalPlacementSummaries}
+                    failedIssues={isFailed ? failedIssueSummaries : []}
+                    warnings={planningWarnings}
+                    height={DRY_RUN_MODAL_HEIGHT}
+                    executionStage={isFailed ? "failed" : "success"}
+                    executionSummary={
+                      response
+                        ? isFailed
+                          ? `执行结束，成功 ${response.successCount} 项，失败 ${response.failureCount} 项。`
+                          : `执行成功，共处理 ${response.successCount} 项，请确认后手动关闭。`
+                        : `批量${actionLabel}未返回结果，请稍后刷新列表确认。`
+                    }
+                  />
+                ),
+              });
+            } catch (error: any) {
+              confirmModal.update({
+                title: `${actionLabel}失败`,
+                closable: true,
+                maskClosable: true,
+                okText: "关闭",
+                cancelButtonProps: { style: { display: "none" } },
+                okButtonProps: { loading: false },
+                onOk: () => {
+                  closeResultModal();
+                },
+                onCancel: () => {
+                  closeResultModal();
+                },
+                content: (
+                  <BatchTransferDryRunPanel
+                    actionLabel={actionLabel}
+                    status="failed"
+                    total={dryRunResponse.total}
+                    successCount={0}
+                    planningMode={
+                      isTopologyTransferResponse(dryRunResponse)
+                        ? dryRunResponse.planningMode || "TOPOLOGY_AWARE"
+                        : undefined
+                    }
+                    normalizedCount={normalizedResults.length}
+                    pendingOperations={pendingOperationSummaries}
+                    resolvedOrder={resolvedOrderSummaries}
+                    finalPlacements={finalPlacementSummaries}
+                    failedIssues={failedIssueSummaries}
+                    warnings={planningWarnings}
+                    height={DRY_RUN_MODAL_HEIGHT}
+                    executionStage="failed"
+                    executionSummary={getErrorMessage(error, `批量${actionLabel}执行失败`)}
+                  />
+                ),
+              });
+            }
+          })();
         },
       });
     } catch (error: any) {

@@ -71,10 +71,10 @@ export default function ActionFooter({
 
       <Space wrap style={{ justifyContent: 'flex-end', flex: '0 1 auto', rowGap: 8 }}>
         <Button onClick={onUndo} disabled={loading || !canUndo} icon={<UndoOutlined />}>
-          上一步
+          撤销
         </Button>
         <Button onClick={onRedo} disabled={loading || !canRedo} icon={<RedoOutlined />}>
-          下一步
+          重做
         </Button>
         {pendingAction && (
           <Button onClick={onCancel} disabled={loading}>
