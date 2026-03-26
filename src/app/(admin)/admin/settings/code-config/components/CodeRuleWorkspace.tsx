@@ -477,7 +477,17 @@ const CodeRuleWorkspace: React.FC<CodeRuleWorkspaceProps> = ({ rule: initialRule
                                   {rootPreview}
                                 </Text>
                               </Flex>
-                              <Text type="secondary" style={{ fontSize: 16 }}>→</Text>
+                              <div
+                                style={{
+                                  padding: '2px 10px',
+                                  borderRadius: 999,
+                                  background: token.colorFillQuaternary,
+                                }}
+                              >
+                                <Text type="secondary" style={{ fontSize: 12 }}>
+                                  派生后
+                                </Text>
+                              </div>
                               <Flex align="center" gap={6}>
                                 <Tag color="cyan" style={{ margin: 0 }}>子级</Tag>
                                 <Text
