@@ -46,7 +46,26 @@ const CodeRuleWorkspace: React.FC<CodeRuleWorkspaceProps> = ({ rule: initialRule
   }, [editingRule.businessObject, editingRule.subRules]);
 
   const updateField = useCallback(<K extends keyof CodeRule>(key: K, value: CodeRule[K]) => {
-    setEditingRule(prev => ({ ...prev, [key]: value }));
+    setEditingRule(prev => {
+      if (key === 'separator') {
+        const nextSeparator = value as CodeRule['separator'];
+        const currentSubRules = prev.subRules;
+
+        return {
+          ...prev,
+          [key]: value,
+          subRules: currentSubRules
+            ? {
+                category: { ...currentSubRules.category, separator: nextSeparator },
+                attribute: { ...currentSubRules.attribute, separator: nextSeparator },
+                enum: { ...currentSubRules.enum, separator: nextSeparator },
+              }
+            : currentSubRules,
+        };
+      }
+
+      return { ...prev, [key]: value };
+    });
     setHasChanges(true);
   }, []);
 
@@ -434,7 +453,7 @@ const CodeRuleWorkspace: React.FC<CodeRuleWorkspaceProps> = ({ rule: initialRule
                     const rootPreview = generateSubRulePreview(subRule);
                     const childPreview = generateChildPreview(rootPreview, subRule);
                     const childConfig: SubRuleConfig = {
-                      separator: subRule.separator,
+                      separator: editingRule.separator,
                       segments: subRule.childSegments ?? [],
                     };
 
@@ -445,10 +464,7 @@ const CodeRuleWorkspace: React.FC<CodeRuleWorkspaceProps> = ({ rule: initialRule
                         <Flex vertical gap={18} style={{ paddingTop: 8 }}>
                           <div
                             style={{
-                              padding: '12px 14px',
-                              background: token.colorPrimaryBg,
-                              borderRadius: token.borderRadiusLG,
-                              borderInlineStart: `3px solid ${token.colorPrimary}`,
+                              padding: '4px 0 2px',
                             }}
                           >
                             <Flex align="center" gap={12} wrap>
@@ -456,7 +472,7 @@ const CodeRuleWorkspace: React.FC<CodeRuleWorkspaceProps> = ({ rule: initialRule
                                 <Tag color="blue" style={{ margin: 0 }}>根节点</Tag>
                                 <Text
                                   strong
-                                  style={{ fontFamily: 'monospace', fontSize: 14, color: token.colorPrimary }}
+                                  style={{ fontFamily: 'inherit', fontSize: 14, color: token.colorText }}
                                 >
                                   {rootPreview}
                                 </Text>
@@ -466,7 +482,7 @@ const CodeRuleWorkspace: React.FC<CodeRuleWorkspaceProps> = ({ rule: initialRule
                                 <Tag color="cyan" style={{ margin: 0 }}>子级</Tag>
                                 <Text
                                   strong
-                                  style={{ fontFamily: 'monospace', fontSize: 14, color: token.colorPrimary }}
+                                  style={{ fontFamily: 'inherit', fontSize: 14, color: token.colorText }}
                                 >
                                   {childPreview}
                                 </Text>
@@ -483,15 +499,22 @@ const CodeRuleWorkspace: React.FC<CodeRuleWorkspaceProps> = ({ rule: initialRule
                             onMoveSegment={handleMoveSegment}
                           />
 
-                          <SegmentDesigner
-                            title="子级派生规则"
-                            config={childConfig}
-                            previewOverride={childPreview}
-                            onAddSegment={handleAddChildSegment}
-                            onRemoveSegment={handleRemoveChildSegment}
-                            onUpdateSegment={handleUpdateChildSegment}
-                            onMoveSegment={handleMoveChildSegment}
-                          />
+                          <div
+                            style={{
+                              borderTop: `1px solid ${token.colorBorderSecondary}`,
+                              paddingTop: 18,
+                            }}
+                          >
+                            <SegmentDesigner
+                              title="子级派生规则"
+                              config={childConfig}
+                              previewOverride={childPreview}
+                              onAddSegment={handleAddChildSegment}
+                              onRemoveSegment={handleRemoveChildSegment}
+                              onUpdateSegment={handleUpdateChildSegment}
+                              onMoveSegment={handleMoveChildSegment}
+                            />
+                          </div>
                         </Flex>
                       ),
                     };

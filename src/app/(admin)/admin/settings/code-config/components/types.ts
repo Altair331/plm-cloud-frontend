@@ -85,6 +85,7 @@ export const SEPARATOR_OPTIONS = [
   { value: '_', label: '_ （下划线）' },
   { value: '.', label: '. （点号）' },
   { value: '/', label: '/ （斜杠）' },
+  { value: '\\', label: '\\ （反斜杠）' },
   { value: '', label: '无分隔符' },
 ];
 

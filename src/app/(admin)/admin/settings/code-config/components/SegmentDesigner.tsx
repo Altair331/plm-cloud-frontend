@@ -44,21 +44,20 @@ const SegmentDesigner: React.FC<SegmentDesignerProps> = ({
 
       <div
         style={{
-          padding: '10px 14px',
-          borderRadius: token.borderRadiusLG,
-          background: token.colorInfoBg,
-          borderInlineStart: `3px solid ${token.colorInfo}`,
+          padding: '4px 0 2px',
         }}
       >
         <Flex align="center" gap={8}>
-          <Text type="secondary" style={{ fontSize: 12, flexShrink: 0 }}>编码预览</Text>
+          <Text type="secondary" style={{ fontSize: 14, flexShrink: 0 }}>
+            编码预览
+          </Text>
           <Text
-            strong
             style={{
-              fontSize: 15,
-              fontFamily: 'monospace',
-              color: token.colorPrimary,
-              letterSpacing: 0.5,
+              fontSize: 14,
+              fontFamily: 'inherit',
+              color: token.colorTextSecondary,
+              letterSpacing: 0,
+              fontWeight: 500,
             }}
           >
             {preview}
