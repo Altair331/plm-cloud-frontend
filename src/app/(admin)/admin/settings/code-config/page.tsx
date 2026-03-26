@@ -1,10 +1,17 @@
 'use client';
 
 import React, { useState, useMemo, useCallback, useRef } from 'react';
-import { Splitter, theme, Flex, Typography, Button, Input, Empty, Tag, Card, Space, Form, Select, InputNumber, Divider, Table } from 'antd';
+import { Splitter, theme, Flex, Typography, Empty, Tag, Collapse, Table, Button, Space, Input, Select, Switch, Row, Col, Card } from 'antd';
 import type { TableColumnsType } from 'antd';
-import { PlusOutlined, EditOutlined, SaveOutlined, DeleteOutlined, SettingOutlined, FontColorsOutlined, NumberOutlined, CalendarOutlined } from '@ant-design/icons';
+import { PlusOutlined, DeleteOutlined } from '@ant-design/icons';
 import BaseTreeToolbar from '@/components/TreeToolbar/BaseTreeToolbar';
+import {
+  CODE_CONFIG_CLASS_NAMES,
+  createCodeConfigGlobalStyles,
+  getCodeConfigStyles,
+  getListRuleNameStyle,
+  getResizableHeaderCellStyle,
+} from './codeConfigStyles';
 
 const { Title, Text } = Typography;
 
@@ -65,10 +72,10 @@ const ResizableHeaderCell: React.FC<ResizableHeaderCellProps> = ({ width, minSha
   };
 
   return (
-    <th {...restProps} style={{ ...style, width, position: 'relative' }}>
+    <th {...restProps} style={getResizableHeaderCellStyle(width, style)}>
       {children}
       {typeof width === 'string' && onResize ? (
-        <div className="code-rule-resize-handle" onMouseDown={handleMouseDown} />
+        <div className={CODE_CONFIG_CLASS_NAMES.resizeHandle} onMouseDown={handleMouseDown} />
       ) : null}
     </th>
   );
@@ -97,9 +104,9 @@ export interface CodeRule {
 const mockRules: CodeRule[] = [
   {
     id: 'rule_1',
-    name: '物料编码规则',
-    code: 'MATERIAL_CODE',
-    scope: '物料分类',
+    name: '产品类别规则',
+    code: 'PRODUCT_CODE',
+    scope: '产品类',
     description: '用于所有标准物料的自动编号',
     segments: [
       { id: 's1', type: 'STRING', value: 'MAT-' },
@@ -110,63 +117,200 @@ const mockRules: CodeRule[] = [
   },
   {
     id: 'rule_2',
-    name: '文档图纸规则',
-    code: 'DOC_CODE',
-    scope: '文档对象',
+    name: '物料类别规则',
+    code: 'MATERIAL_CODE',
+    scope: '物料类',
     description: '研发设计图纸生成规则',
     segments: [
       { id: 's1', type: 'STRING', value: 'DOC' },
       { id: 's2', type: 'SEQUENCE', length: 6, resetRule: 'NEVER' }
     ]
-  }
+  },
+  {
+    id: 'rule_3',
+    name: 'BOM类别规则',
+    code: 'BOM_CODE',
+    scope: 'BOM类',
+    description: '用于所有标准物料的自动编号',
+    segments: [
+      { id: 's1', type: 'STRING', value: 'MAT-' },
+      { id: 's2', type: 'DATE', dateFormat: 'YYYYMM' },
+      { id: 's3', type: 'STRING', value: '-' },
+      { id: 's4', type: 'SEQUENCE', length: 5, resetRule: 'YEARLY' }
+    ]
+  },
+  {
+    id: 'rule_4',
+    name: '工艺类别规则',
+    code: 'PROCESS_CODE',
+    scope: '工艺类',
+    description: '用于所有标准物料的自动编号',
+    segments: [
+      { id: 's1', type: 'STRING', value: 'MAT-' },
+      { id: 's2', type: 'DATE', dateFormat: 'YYYYMM' },
+      { id: 's3', type: 'STRING', value: '-' },
+      { id: 's4', type: 'SEQUENCE', length: 5, resetRule: 'YEARLY' }
+    ]
+  },
+  {
+    id: 'rule_5',
+    name: '测试类别规则',
+    code: 'TEST_CODE',
+    scope: '测试类',
+    description: '用于所有标准物料的自动编号',
+    segments: [
+      { id: 's1', type: 'STRING', value: 'MAT-' },
+      { id: 's2', type: 'DATE', dateFormat: 'YYYYMM' },
+      { id: 's3', type: 'STRING', value: '-' },
+      { id: 's4', type: 'SEQUENCE', length: 5, resetRule: 'YEARLY' }
+    ]
+  },
+  {
+    id: 'rule_6',
+    name: '实验类别规则',
+    code: 'EXPERIMENT_CODE',
+    scope: '实验类',
+    description: '用于所有标准物料的自动编号',
+    segments: [
+      { id: 's1', type: 'STRING', value: 'MAT-' },
+      { id: 's2', type: 'DATE', dateFormat: 'YYYYMM' },
+      { id: 's3', type: 'STRING', value: '-' },
+      { id: 's4', type: 'SEQUENCE', length: 5, resetRule: 'YEARLY' }
+    ]
+  },
 ];
 
 const CHECKBOX_COL_WIDTH = 48;
-const CODE_SEGMENT_CARD_HEIGHT = 160;
 const COLUMN_KEYS: ColumnKey[] = ['name', 'code', 'scope'];
-const SEGMENT_TYPE_OPTIONS: Array<{ type: CodeSegment['type']; label: string }> = [
-  { type: 'STRING', label: '固定字符' },
-  { type: 'DATE', label: '日期段' },
-  { type: 'SEQUENCE', label: '流水号' },
+
+const CONFIG_SECTION_ITEMS = [
+  {
+    key: 'category',
+    label: '分类编码配置',
+  },
+  {
+    key: 'attribute',
+    label: '属性编码配置',
+  },
+  {
+    key: 'enum',
+    label: '枚举值编码配置',
+  },
+] as const;
+
+type CodeSegmentTemplateType = 'constant' | 'field' | 'sequence';
+
+interface CodeSegmentTemplate {
+  id: string;
+  title: string;
+  type: CodeSegmentTemplateType;
+  constantValue?: string;
+  fieldSource?: string;
+  fetchMode?: string;
+  resetBasis?: string;
+  separator?: string;
+  length?: number;
+  step?: number;
+  startAt?: number;
+  autoCarry?: boolean;
+  padWithZero?: boolean;
+}
+
+interface SelectOption {
+  label: string;
+  value: string;
+}
+
+const SEGMENT_TYPE_OPTIONS: SelectOption[] = [
+  { label: '常量', value: 'constant' },
+  { label: '业务对象字段', value: 'field' },
+  { label: '流水号', value: 'sequence' },
+] ;
+
+const FIELD_SOURCE_OPTIONS: SelectOption[] = [
+  { label: '名称(name)', value: 'name' },
+  { label: '编码(code)', value: 'code' },
+  { label: '分类编码(categoryCode)', value: 'categoryCode' },
+] ;
+
+const FETCH_MODE_OPTIONS: SelectOption[] = [
+  { label: '完全取值', value: 'full' },
+  { label: '前缀截取', value: 'prefix' },
+  { label: '后缀截取', value: 'suffix' },
+] ;
+
+const SEPARATOR_OPTIONS: SelectOption[] = [
+  { label: '-', value: '-' },
+  { label: '_', value: '_' },
+  { label: '/', value: '/' },
+  { label: '无', value: '' },
+] ;
+
+const RESET_BASIS_OPTIONS: SelectOption[] = [
+  { label: '非依据', value: 'none' },
+  { label: '自然日', value: 'daily' },
+  { label: '自然月', value: 'monthly' },
+  { label: '自然年', value: 'yearly' },
+] ;
+
+const FIELD_SOURCE_PREVIEW_MAP: Record<string, string> = {
+  name: '名称(name)',
+  code: '编码(code)',
+  categoryCode: '分类编码(categoryCode)',
+};
+
+const INITIAL_CATEGORY_SEGMENTS: CodeSegmentTemplate[] = [
+  {
+    id: 'seg_1',
+    title: '编码一段',
+    type: 'constant',
+    constantValue: 'MAT',
+  },
+  {
+    id: 'seg_2',
+    title: '编码二段',
+    type: 'field',
+    fieldSource: 'name',
+    fetchMode: 'full',
+    resetBasis: 'none',
+    separator: '-',
+  },
+  {
+    id: 'seg_3',
+    title: '编码三段',
+    type: 'sequence',
+    length: 8,
+    step: 1,
+    startAt: 1,
+    separator: '-',
+    autoCarry: false,
+    padWithZero: true,
+  },
 ];
 
-const createDefaultSegment = (type: CodeSegment['type']): CodeSegment => {
-  const id = `segment_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+const createTemplateSegment = (index: number): CodeSegmentTemplate => ({
+  id: `seg_${Date.now()}_${index}`,
+  title: `编码${['一', '二', '三', '四', '五', '六'][index - 1] || `${index}`}段`,
+  type: 'constant',
+  constantValue: '',
+});
 
-  if (type === 'STRING') {
-    return { id, type, value: 'NEW-' };
-  }
-
-  if (type === 'DATE') {
-    return { id, type, dateFormat: 'YYYYMMDD' };
-  }
-
-  return { id, type, length: 4, resetRule: 'YEARLY' };
-};
-
-const getSegmentDescriptionLabel = (type: CodeSegment['type']) => {
-  if (type === 'STRING') return '固定前缀';
-  if (type === 'DATE') return '日期格式';
-  return '流水号规则';
-};
-
-const getSegmentTitle = (type: CodeSegment['type']) => {
-  if (type === 'STRING') return '固定字符';
-  if (type === 'DATE') return '日期段';
-  return '流水号';
-};
-
-const getSegmentSummary = (segment: CodeSegment) => {
-  if (segment.type === 'STRING') {
-    return segment.value?.trim() ? `固定前缀：${segment.value}` : '未填写固定字符';
-  }
-
-  if (segment.type === 'DATE') {
-    return `日期格式：${segment.dateFormat || '未设置'}`;
-  }
-
-  return `长度 ${segment.length || 4} 位${segment.resetRule ? `，${segment.resetRule} 重置` : ''}`;
-};
+const SegmentField = ({
+  label,
+  span = 24,
+  children,
+}: {
+  label: string;
+  span?: number;
+  children: React.ReactNode;
+}) => (
+  <Col span={span}>
+    <Flex vertical gap={8}>
+      <Text type="secondary">{label}</Text>
+      {children}
+    </Flex>
+  </Col>
+);
 
 const distributeDeltaAcrossColumns = (
   currentShares: ColumnShareMap,
@@ -250,6 +394,8 @@ const CodeRuleList = ({
   onSelect: (id: string) => void 
 }) => {
   const { token } = theme.useToken();
+  const styles = getCodeConfigStyles(token);
+  const globalStyles = createCodeConfigGlobalStyles(token, CHECKBOX_COL_WIDTH);
   const [searchText, setSearchText] = useState('');
   const [searchExpanded, setSearchExpanded] = useState(false);
   const [checkableEnabled, setCheckableEnabled] = useState(false);
@@ -300,12 +446,7 @@ const CodeRuleList = ({
       render: (value: string, record: CodeRule) => (
         <Text
           strong
-          style={{
-            display: 'block',
-            width: '100%',
-            textAlign: 'center',
-            color: record.id === activeId ? token.colorPrimary : token.colorText,
-          }}
+          style={getListRuleNameStyle(token, record.id === activeId)}
         >
           {value}
         </Text>
@@ -326,7 +467,7 @@ const CodeRuleList = ({
       render: (value: string) => (
         <Text
           type="secondary"
-          style={{ display: 'block', width: '100%', textAlign: 'center', fontSize: 12, fontFamily: 'monospace' }}
+          style={styles.listMonoText}
           ellipsis={{ tooltip: value }}
         >
           {value}
@@ -346,7 +487,7 @@ const CodeRuleList = ({
         onResize: (share: number) => handleColumnResize('scope', share),
       }),
       render: (value: string) => (
-        <Text type="secondary" style={{ display: 'block', width: '100%', textAlign: 'center' }} ellipsis={{ tooltip: value }}>
+        <Text type="secondary" style={styles.listSecondaryText} ellipsis={{ tooltip: value }}>
           {value}
         </Text>
       ),
@@ -362,9 +503,9 @@ const CodeRuleList = ({
     : undefined;
 
   return (
-    <Flex vertical style={{ height: '100%', background: token.colorBgContainer }}>
+    <Flex vertical style={styles.listContainer}>
       {/* 列表工具栏 */}
-      <Flex align="center" style={{ padding: '0 16px', borderBottom: `1px solid ${token.colorBorderSecondary}`, height: 48 }}>
+      <Flex align="center" style={styles.listToolbar}>
         <BaseTreeToolbar
           toolbarState={toolbarState}
           searchPlaceholder="搜索规则"
@@ -391,9 +532,9 @@ const CodeRuleList = ({
       </Flex>
       
       {/* 列表主体区 */}
-      <div className="code-rule-list-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden' }}>
+      <div className={CODE_CONFIG_CLASS_NAMES.listScroll} style={styles.listScroll}>
         <Table<CodeRule>
-          className={`code-rule-list-table ${checkableEnabled ? 'code-rule-list-table--checkable' : ''}`}
+          className={[CODE_CONFIG_CLASS_NAMES.listTable, checkableEnabled ? CODE_CONFIG_CLASS_NAMES.listTableCheckable : ''].filter(Boolean).join(' ')}
           rowKey="id"
           size="small"
           tableLayout="fixed"
@@ -415,139 +556,16 @@ const CodeRuleList = ({
               onSelect(record.id);
             },
           })}
-          rowClassName={(record) => (record.id === activeId ? 'code-rule-row-active' : 'code-rule-row')}
+          rowClassName={(record) => (record.id === activeId ? CODE_CONFIG_CLASS_NAMES.rowActive : CODE_CONFIG_CLASS_NAMES.row)}
         />
       </div>
       
       {/* 底部信息 */}
-      <div style={{ padding: 8, borderTop: `1px solid ${token.colorBorderSecondary}`, background: token.colorBgLayout, textAlign: 'center', fontSize: 12, color: token.colorTextQuaternary }}>
+      <div style={styles.listFooter}>
         共 {filteredRules.length} 个规则
       </div>
 
-      <style jsx global>{`
-        .code-rule-list-scroll,
-        .code-rule-workspace-scroll {
-          scrollbar-width: thin;
-          scrollbar-color: ${token.colorBorder} transparent;
-        }
-
-        .code-rule-list-scroll::-webkit-scrollbar,
-        .code-rule-workspace-scroll::-webkit-scrollbar {
-          width: 10px;
-          height: 10px;
-        }
-
-        .code-rule-list-scroll::-webkit-scrollbar-track,
-        .code-rule-workspace-scroll::-webkit-scrollbar-track {
-          background: transparent;
-        }
-
-        .code-rule-list-scroll::-webkit-scrollbar-thumb,
-        .code-rule-workspace-scroll::-webkit-scrollbar-thumb {
-          background: ${token.colorBorder};
-          border: 3px solid transparent;
-          border-radius: 999px;
-          background-clip: padding-box;
-        }
-
-        .code-rule-list-scroll::-webkit-scrollbar-thumb:hover,
-        .code-rule-workspace-scroll::-webkit-scrollbar-thumb:hover {
-          background: ${token.colorTextQuaternary};
-          border: 3px solid transparent;
-          background-clip: padding-box;
-        }
-
-        .code-rule-list-table .ant-table,
-        .code-rule-list-table .ant-table-container {
-          background: ${token.colorBgContainer};
-          width: 100%;
-        }
-
-        .code-rule-list-table table {
-          width: 100% !important;
-        }
-
-        .code-rule-list-table .ant-table-thead > tr > th,
-        .code-rule-list-table .ant-table-tbody > tr > td {
-          padding-top: 12px;
-          padding-bottom: 12px;
-        }
-
-        .code-rule-list-table .ant-table-thead > tr > th {
-          background: ${token.colorFillAlter};
-          color: ${token.colorTextSecondary};
-          font-size: 12px;
-          font-weight: 500;
-          text-align: center;
-          position: sticky;
-          top: 0;
-          z-index: 2;
-        }
-
-        .code-rule-list-table:not(.code-rule-list-table--checkable) .ant-table-thead > tr > th:first-child,
-        .code-rule-list-table:not(.code-rule-list-table--checkable) .ant-table-tbody > tr > td:first-child {
-          padding-left: 20px;
-        }
-
-        .code-rule-list-table .ant-table-selection-column {
-          width: ${CHECKBOX_COL_WIDTH}px !important;
-          min-width: ${CHECKBOX_COL_WIDTH}px;
-          text-align: center;
-          padding-left: 12px !important;
-          padding-right: 12px !important;
-        }
-
-        .code-rule-list-table .ant-table-tbody > tr.code-rule-row > td,
-        .code-rule-list-table .ant-table-tbody > tr.code-rule-row-active > td {
-          cursor: pointer;
-          transition: background 0.2s ease;
-        }
-
-        .code-rule-list-table .ant-table-tbody > tr.code-rule-row:hover > td {
-          background: ${token.controlItemBgHover};
-        }
-
-        .code-rule-list-table .ant-table-tbody > tr.code-rule-row-active > td {
-          background: ${token.controlItemBgActive} !important;
-        }
-
-        .code-rule-list-table .ant-table-tbody > tr.code-rule-row-active > td:first-child {
-          box-shadow: inset 4px 0 0 ${token.colorPrimary};
-        }
-
-        .code-rule-list-table .ant-table-tbody > tr > td {
-          background: ${token.colorBgContainer};
-          text-align: center;
-        }
-
-        .code-rule-resize-handle {
-          position: absolute;
-          top: 0;
-          right: -5px;
-          width: 10px;
-          height: 100%;
-          cursor: col-resize;
-          z-index: 3;
-        }
-
-        .code-rule-resize-handle::after {
-          content: '';
-          position: absolute;
-          top: 50%;
-          right: 4px;
-          transform: translateY(-50%);
-          width: 2px;
-          height: 18px;
-          border-radius: 999px;
-          background: ${token.colorBorder};
-          opacity: 0;
-          transition: opacity 0.2s ease;
-        }
-
-        .code-rule-list-table .ant-table-thead > tr > th:hover .code-rule-resize-handle::after {
-          opacity: 1;
-        }
-      `}</style>
+      <style jsx global>{globalStyles}</style>
     </Flex>
   );
 };
@@ -555,10 +573,330 @@ const CodeRuleList = ({
 // ================= 右侧：设计工作区组件 =================
 const CodeRuleWorkspace = ({ rule }: { rule: CodeRule }) => {
   const { token } = theme.useToken();
+  const styles = getCodeConfigStyles(token);
+  const [isEditing, setIsEditing] = useState(false);
+  const [activePanelKey, setActivePanelKey] = useState<string>(CONFIG_SECTION_ITEMS[0].key);
+  const [categorySegments, setCategorySegments] = useState<CodeSegmentTemplate[]>(INITIAL_CATEGORY_SEGMENTS);
+
+  const previewCode = useMemo(() => categorySegments.map((segment, index) => {
+    let segmentPreview = '';
+
+    if (segment.type === 'constant') {
+      segmentPreview = segment.constantValue?.trim() || '常量';
+    } else if (segment.type === 'field') {
+      const sourcePreview = FIELD_SOURCE_PREVIEW_MAP[segment.fieldSource || 'name'] || '业务对象字段';
+      if (segment.fetchMode === 'prefix') {
+        segmentPreview = `${sourcePreview}-前缀`;
+      } else if (segment.fetchMode === 'suffix') {
+        segmentPreview = `${sourcePreview}-后缀`;
+      } else {
+        segmentPreview = sourcePreview;
+      }
+    } else {
+      const baseValue = String(segment.startAt ?? 1);
+      segmentPreview = segment.padWithZero
+        ? baseValue.padStart(segment.length ?? 8, '0')
+        : baseValue;
+    }
+
+    if (index < categorySegments.length - 1 && segment.separator) {
+      return `${segmentPreview}${segment.separator}`;
+    }
+
+    return segmentPreview;
+  }).join(''), [categorySegments]);
+
+  const handleSegmentChange = useCallback((segmentId: string, patch: Partial<CodeSegmentTemplate>) => {
+    setCategorySegments((prev) => prev.map((segment) => {
+      if (segment.id !== segmentId) {
+        return segment;
+      }
+
+      const nextSegment = { ...segment, ...patch };
+
+      if (patch.type === 'constant') {
+        return {
+          ...nextSegment,
+          constantValue: nextSegment.constantValue ?? '',
+          fieldSource: undefined,
+          fetchMode: undefined,
+          resetBasis: undefined,
+          separator: undefined,
+          length: undefined,
+          step: undefined,
+          startAt: undefined,
+          autoCarry: undefined,
+          padWithZero: undefined,
+        };
+      }
+
+      if (patch.type === 'field') {
+        return {
+          ...nextSegment,
+          fieldSource: nextSegment.fieldSource ?? 'name',
+          fetchMode: nextSegment.fetchMode ?? 'full',
+          resetBasis: nextSegment.resetBasis ?? 'none',
+          separator: nextSegment.separator ?? '-',
+          constantValue: undefined,
+          length: undefined,
+          step: undefined,
+          startAt: undefined,
+          autoCarry: undefined,
+          padWithZero: undefined,
+        };
+      }
+
+      if (patch.type === 'sequence') {
+        return {
+          ...nextSegment,
+          length: nextSegment.length ?? 8,
+          step: nextSegment.step ?? 1,
+          startAt: nextSegment.startAt ?? 1,
+          separator: nextSegment.separator ?? '-',
+          autoCarry: nextSegment.autoCarry ?? false,
+          padWithZero: nextSegment.padWithZero ?? true,
+          constantValue: undefined,
+          fieldSource: undefined,
+          fetchMode: undefined,
+          resetBasis: undefined,
+        };
+      }
+
+      return nextSegment;
+    }));
+  }, []);
+
+  const handleAddSegment = useCallback(() => {
+    setCategorySegments((prev) => [...prev, createTemplateSegment(prev.length + 1)]);
+  }, []);
+
+  const handleRemoveSegment = useCallback(() => {
+    setCategorySegments((prev) => (prev.length > 1 ? prev.slice(0, -1) : prev));
+  }, []);
+
+  const renderCategoryEditor = () => (
+    <div
+      className={CODE_CONFIG_CLASS_NAMES.editorSurface}
+      style={styles.editorSurface}
+    >
+      <Flex vertical gap={16} style={styles.editorContent}>
+        <Flex justify="space-between" style={styles.editorHead}>
+          <Flex vertical gap={6}>
+            <Text strong style={styles.editorTitle}>
+              编码设置
+            </Text>
+            <Flex align="center" gap={12} wrap>
+              <Text type="secondary">编码示例 :</Text>
+              <Text style={styles.previewCode}>{previewCode}</Text>
+            </Flex>
+          </Flex>
+          <Space>
+            <Button size="small" onClick={handleAddSegment} disabled={!isEditing}>新增</Button>
+            <Button size="small" onClick={handleRemoveSegment} disabled={!isEditing || categorySegments.length <= 1}>删除</Button>
+          </Space>
+        </Flex>
+
+        <Row gutter={[16, 16]}>
+          {categorySegments.map((segment) => (
+            <Col key={segment.id} xs={24} md={12}>
+              <Card
+                size="small"
+                title={<Text strong>{segment.title}</Text>}
+                extra={
+                  <Select
+                    value={segment.type}
+                    options={SEGMENT_TYPE_OPTIONS}
+                    onChange={(value) => handleSegmentChange(segment.id, { type: value as CodeSegmentTemplateType })}
+                    disabled={!isEditing}
+                    variant="filled"
+                    style={styles.segmentTypeSelect}
+                  />
+                }
+                styles={{
+                  header: styles.segmentCardHeader,
+                  body: styles.segmentCardBody,
+                }}
+                style={styles.segmentCard}
+              >
+                {segment.type === 'constant' ? (
+                  <Row gutter={[20, 12]}>
+                    <SegmentField label="设置值">
+                      <Input
+                        variant="filled"
+                        value={segment.constantValue}
+                        onChange={(event) => handleSegmentChange(segment.id, { constantValue: event.target.value })}
+                        disabled={!isEditing}
+                      />
+                    </SegmentField>
+                  </Row>
+                ) : null}
+
+                {segment.type === 'field' ? (
+                  <Row gutter={[20, 12]}>
+                    <SegmentField label="使用模式" span={8}>
+                      <Select
+                        value={segment.fetchMode}
+                        options={FETCH_MODE_OPTIONS}
+                        onChange={(value) => handleSegmentChange(segment.id, { fetchMode: value })}
+                        disabled={!isEditing}
+                        variant="filled"
+                        style={styles.fullWidthField}
+                      />
+                    </SegmentField>
+                    <SegmentField label="编码来源" span={8}>
+                      <Select
+                        value={segment.fieldSource}
+                        options={FIELD_SOURCE_OPTIONS}
+                        onChange={(value) => handleSegmentChange(segment.id, { fieldSource: value })}
+                        disabled={!isEditing}
+                        variant="filled"
+                        style={styles.fullWidthField}
+                      />
+                    </SegmentField>
+                    <SegmentField label="流水号依据" span={8}>
+                      <Select
+                        value={segment.resetBasis}
+                        options={RESET_BASIS_OPTIONS}
+                        onChange={(value) => handleSegmentChange(segment.id, { resetBasis: value })}
+                        disabled={!isEditing}
+                        variant="filled"
+                        style={styles.fullWidthField}
+                      />
+                    </SegmentField>
+                    <SegmentField label="段间分隔符" span={8}>
+                      <Select
+                        value={segment.separator}
+                        options={SEPARATOR_OPTIONS}
+                        onChange={(value) => handleSegmentChange(segment.id, { separator: value })}
+                        disabled={!isEditing}
+                        variant="filled"
+                        style={styles.fullWidthField}
+                      />
+                    </SegmentField>
+                  </Row>
+                ) : null}
+
+                {segment.type === 'sequence' ? (
+                  <Row gutter={[20, 12]}>
+                    <SegmentField label="长度" span={6}>
+                      <Input
+                        variant="filled"
+                        value={segment.length}
+                        onChange={(event) => handleSegmentChange(segment.id, { length: Number(event.target.value || 0) || undefined })}
+                        disabled={!isEditing}
+                      />
+                    </SegmentField>
+                    <SegmentField label="步长" span={6}>
+                      <Input
+                        variant="filled"
+                        value={segment.step}
+                        onChange={(event) => handleSegmentChange(segment.id, { step: Number(event.target.value || 0) || undefined })}
+                        disabled={!isEditing}
+                      />
+                    </SegmentField>
+                    <SegmentField label="起始值" span={6}>
+                      <Input
+                        variant="filled"
+                        value={segment.startAt}
+                        onChange={(event) => handleSegmentChange(segment.id, { startAt: Number(event.target.value || 0) || undefined })}
+                        disabled={!isEditing}
+                      />
+                    </SegmentField>
+                    <SegmentField label="段间分隔符" span={6}>
+                      <Select
+                        value={segment.separator}
+                        options={SEPARATOR_OPTIONS}
+                        onChange={(value) => handleSegmentChange(segment.id, { separator: value })}
+                        disabled={!isEditing}
+                        variant="filled"
+                        style={styles.fullWidthField}
+                      />
+                    </SegmentField>
+                    <Col span={8}>
+                      <Flex justify="space-between" align="center" style={styles.switchRow}>
+                        <Text>超过设置长度时自动升位</Text>
+                        <Switch size="small" checked={segment.autoCarry} onChange={(checked) => handleSegmentChange(segment.id, { autoCarry: checked })} disabled={!isEditing} />
+                      </Flex>
+                    </Col>
+                    <Col span={8}>
+                      <Flex justify="space-between" align="center" style={styles.switchRow}>
+                        <Text>用0补位</Text>
+                        <Switch size="small" checked={segment.padWithZero} onChange={(checked) => handleSegmentChange(segment.id, { padWithZero: checked })} disabled={!isEditing} />
+                      </Flex>
+                    </Col>
+                  </Row>
+                ) : null}
+              </Card>
+            </Col>
+          ))}
+        </Row>
+      </Flex>
+    </div>
+  );
 
   return (
-    <Flex vertical style={{ height: '100%', background: token.colorBgContainer }}>
-      <div style={{ flex: 1, minHeight: 0, background: token.colorBgContainer }} />
+    <Flex vertical style={styles.workspaceContainer}>
+      <Flex
+        align="center"
+        justify="space-between"
+        style={styles.workspaceHeader}
+      >
+        <Flex align="center" gap={12} wrap="wrap">
+          <Title level={5} style={styles.titleReset}>
+            {rule.name}
+          </Title>
+          <Tag color="cyan">{rule.scope}</Tag>
+          <Tag color={isEditing ? 'processing' : 'default'}>{isEditing ? '编辑中' : '只读'}</Tag>
+          <Text type="secondary" copyable style={styles.activeRuleCode}>
+            {rule.code}
+          </Text>
+        </Flex>
+
+        <Space size="small">
+          {isEditing ? (
+            <>
+              <Button size="small" onClick={() => setIsEditing(false)}>
+                取消
+              </Button>
+              <Button type="primary" size="small" onClick={() => setIsEditing(false)}>
+                保存
+              </Button>
+            </>
+          ) : (
+            <Button type="text" size="small" onClick={() => setIsEditing(true)}>
+              编辑
+            </Button>
+          )}
+        </Space>
+      </Flex>
+
+      <Collapse
+        accordion
+        ghost
+        activeKey={activePanelKey}
+        bordered={false}
+        onChange={(key) => setActivePanelKey(Array.isArray(key) ? String(key[0] || CONFIG_SECTION_ITEMS[0].key) : String(key || CONFIG_SECTION_ITEMS[0].key))}
+        className={`${CODE_CONFIG_CLASS_NAMES.workspaceScroll} ${CODE_CONFIG_CLASS_NAMES.workspaceCollapse}`}
+        style={styles.workspaceCollapse}
+        items={CONFIG_SECTION_ITEMS.map((item) => ({
+          key: item.key,
+          label: <Text strong>{item.label}</Text>,
+          styles: {
+            header: styles.collapseHeader,
+            body: styles.collapseBody,
+          },
+          children: item.key === 'category'
+            ? renderCategoryEditor()
+            : (
+              <div style={styles.placeholderPanel}>
+                <Empty
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  description={isEditing ? `${item.label}编辑区域待配置` : `${item.label}只读内容待配置`}
+                />
+              </div>
+            ),
+        }))}
+      />
     </Flex>
   );
 };
@@ -566,6 +904,7 @@ const CodeRuleWorkspace = ({ rule }: { rule: CodeRule }) => {
 // ================= 主页面入口 =================
 export default function CodeSettingPage() {
   const { token } = theme.useToken();
+  const styles = getCodeConfigStyles(token);
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rules, setRules] = useState<CodeRule[]>(mockRules);
   const [activeRuleId, setActiveRuleId] = useState<string | null>(mockRules[0].id);
@@ -573,35 +912,21 @@ export default function CodeSettingPage() {
   const activeRule = useMemo(() => rules.find(r => r.id === activeRuleId), [rules, activeRuleId]);
 
   return (
-    <div style={{
-      height: "calc(100vh - 163px)",
-      display: "flex",
-      flexDirection: "column",
-      gap: 16,
-      overflow: "hidden",
-    }}>
+    <div style={styles.pageContainer}>
       <Splitter
         onCollapse={(collapsed) => setLeftCollapsed(collapsed[0] ?? false)}
-        style={{
-          flex: 1,
-          minHeight: 0,
-          background: "var(--ant-color-bg-container, #fff)",
-          borderRadius: 8,
-          border: `1px solid ${token.colorBorderSecondary}`,
-          boxShadow: "0 0 10px rgba(0, 0, 0, 0.05)",
-          overflow: "hidden",
-        }}
+        style={styles.splitter}
       >
         <Splitter.Panel defaultSize={450} min={350} max={550} collapsible={{ end: true, showCollapsibleIcon: leftCollapsed ? true : "auto" }}>
           <CodeRuleList rules={rules} activeId={activeRuleId} onSelect={setActiveRuleId} />
         </Splitter.Panel>
         
         <Splitter.Panel>
-          <div style={{ position: "relative", height: "100%", overflow: "hidden" }}>
+          <div style={styles.splitterPanelContent}>
             {activeRule ? (
               <CodeRuleWorkspace rule={activeRule} />
             ) : (
-              <Flex justify="center" align="center" style={{ height: "100%", background: token.colorBgLayout }}>
+              <Flex justify="center" align="center" style={styles.emptyState}>
                 <Empty description="请在左侧选择一个规则进行设计" />
               </Flex>
             )}
