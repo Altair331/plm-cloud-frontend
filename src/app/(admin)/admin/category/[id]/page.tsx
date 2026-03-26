@@ -23,8 +23,15 @@ import {
 import AttributeDesigner from "../AttributeDesigner";
 import { useDictionary } from "@/contexts/DictionaryContext";
 import type { MetaDictionaryEntryDto } from "@/models/dictionary";
+import {
+  CATEGORY_BUSINESS_DOMAIN_DICT_CODE,
+  getCategoryBusinessDomainConfigs,
+  getCategoryBusinessDomainPath,
+  getDefaultCategoryBusinessDomain,
+  resolveCategoryBusinessDomain,
+} from "@/features/category/businessDomains";
 
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 
 const ReactQuill = dynamic(() => import("react-quill-new"), { ssr: false });
 const EMPTY_QUILL_DELTA_JSON = '{"ops":[{"insert":"\\n"}]}'
@@ -90,8 +97,6 @@ interface CategoryNodeRef extends MetaCategoryNodeDto {
 type BatchTransferSuccessResponse =
   | MetaCategoryBatchTransferResponseDto
   | MetaCategoryBatchTransferTopologyResponseDto;
-
-const CATEGORY_BUSINESS_DOMAIN = "MATERIAL";
 
 const getChildLevel = (
   level?: CategoryTreeNode["level"],
@@ -168,15 +173,27 @@ const CategoryManagementPage: React.FC = () => {
   const { message: messageApi, modal } = App.useApp();
   const { token } = theme.useToken();
   const { ensureScene, getEntries, getLabel } = useDictionary();
+  const router = useRouter();
   const params = useParams();
-  const categoryId = params.id as string;
+  const routeBusinessDomain = params.id as string;
 
   useEffect(() => {
     void ensureScene("category-admin");
   }, [ensureScene]);
 
   const categoryStatusEntries = getEntries("META_CATEGORY_STATUS");
-  const businessDomainEntries = getEntries("META_CATEGORY_BUSINESS_DOMAIN");
+  const businessDomainEntries = getEntries(CATEGORY_BUSINESS_DOMAIN_DICT_CODE);
+  const businessDomainConfigs = getCategoryBusinessDomainConfigs(businessDomainEntries);
+  const defaultBusinessDomain = getDefaultCategoryBusinessDomain(businessDomainEntries);
+  const resolvedBusinessDomain = resolveCategoryBusinessDomain(businessDomainEntries, routeBusinessDomain);
+  const currentBusinessDomain = resolvedBusinessDomain?.code;
+  const activeBusinessDomain = currentBusinessDomain || '';
+
+  useEffect(() => {
+    if (resolvedBusinessDomain && routeBusinessDomain !== resolvedBusinessDomain.code) {
+      router.replace(getCategoryBusinessDomainPath(resolvedBusinessDomain.code));
+    }
+  }, [resolvedBusinessDomain, routeBusinessDomain, router]);
 
   const [selectedKey, setSelectedKey] = useState<React.Key>("");
   const [selectedNode, setSelectedNode] = useState<
@@ -393,7 +410,7 @@ const CategoryManagementPage: React.FC = () => {
 
   const fetchRootNodes = async () => {
     const page = await metaCategoryApi.listNodes({
-      businessDomain: CATEGORY_BUSINESS_DOMAIN,
+    businessDomain: activeBusinessDomain,
       level: 1,
       status: "ALL",
       page: 0,
@@ -405,7 +422,7 @@ const CategoryManagementPage: React.FC = () => {
 
   const fetchChildNodes = async (parentId: React.Key) => {
     const page = await metaCategoryApi.listNodes({
-      businessDomain: CATEGORY_BUSINESS_DOMAIN,
+      businessDomain: activeBusinessDomain,
       parentId: String(parentId),
       status: "ALL",
       page: 0,
@@ -422,7 +439,7 @@ const CategoryManagementPage: React.FC = () => {
     }
 
     const results = await Promise.allSettled(
-      uniqueIds.map((id) => metaCategoryApi.getNodePath(id, CATEGORY_BUSINESS_DOMAIN)),
+      uniqueIds.map((id) => metaCategoryApi.getNodePath(id, activeBusinessDomain)),
     );
 
     return results
@@ -501,8 +518,25 @@ const CategoryManagementPage: React.FC = () => {
 
   // Initial Load (Segments)
   useEffect(() => {
+    if (!currentBusinessDomain) {
+      return;
+    }
+
+    setSelectedKey("");
+    setSelectedNode(undefined);
+    setDrawerVisible(false);
+    setPreviewNode(undefined);
+    setPreviewDetail(null);
+    setPreviewEditing(false);
+    setRenameGuidedEdit(false);
+    setPreviewEditBaseline("");
+    setPreviewEditCurrent("");
+    setPendingPreviewFormValues(null);
+    setExpandedKeys([]);
+    setLoadedKeys([]);
+    setAttributeUnsavedState({ hasUnsavedChanges: false, unsavedNewCount: 0 });
     void loadSegments();
-  }, []);
+  }, [currentBusinessDomain]);
 
   const loadSegments = async () => {
     try {
@@ -838,7 +872,7 @@ const CategoryManagementPage: React.FC = () => {
             title: `${localCode} - ${trimmed}`,
             dataRef: {
               id: `local_${childLevel}_${Date.now()}`,
-              businessDomain: "MATERIAL",
+              businessDomain: node.dataRef?.businessDomain || activeBusinessDomain,
               key: `local_${childLevel}_${Date.now()}`,
               code: localCode,
               name: trimmed,
@@ -1001,7 +1035,7 @@ const CategoryManagementPage: React.FC = () => {
       isLeaf: true,
       dataRef: {
         id: created.id,
-        businessDomain: created.businessDomain || "MATERIAL",
+        businessDomain: created.businessDomain || activeBusinessDomain,
         code: created.code,
         name,
         level: levelNumber,
@@ -1129,7 +1163,25 @@ const CategoryManagementPage: React.FC = () => {
     }
   };
 
-  if (categoryId !== "2") {
+  if (!businessDomainConfigs.length) {
+    return (
+      <div
+        style={{
+          height: "calc(100vh - 163px)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: "var(--ant-color-bg-container, #fff)",
+          borderRadius: 8,
+          border: "1px solid var(--ant-color-border-secondary, #f0f0f0)",
+        }}
+      >
+        <Spin tip="正在加载业务领域配置..." />
+      </div>
+    );
+  }
+
+  if (!resolvedBusinessDomain || !currentBusinessDomain) {
     return (
       <div
         style={{
@@ -1143,7 +1195,7 @@ const CategoryManagementPage: React.FC = () => {
         }}
       >
         <div style={{ color: "#999", fontSize: 16 }}>
-          该分类下的数据能力建设功能正在开发中...
+          未识别的业务领域，无法加载分类管理页面。
         </div>
       </div>
     );
@@ -1183,6 +1235,7 @@ const CategoryManagementPage: React.FC = () => {
           <CategoryTree
             onSelect={onSelect}
             treeData={treeData}
+            defaultBusinessDomain={currentBusinessDomain}
             selectedKeys={selectedKey ? [selectedKey] : []}
             expandedKeys={expandedKeys}
             onExpandedKeysChange={setExpandedKeys}

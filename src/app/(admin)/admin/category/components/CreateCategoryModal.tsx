@@ -3,6 +3,10 @@ import { App, Form, Input, Select, Button, Row, Col, Space, Card, theme, Typogra
 import dynamic from 'next/dynamic';
 import DraggableModal from '@/components/DraggableModal';
 import { useDictionary } from '@/contexts/DictionaryContext';
+import {
+  CATEGORY_BUSINESS_DOMAIN_DICT_CODE,
+  getCategoryBusinessDomainLabel,
+} from '@/features/category/businessDomains';
 
 const { Option } = Select;
 const { Text } = Typography;
@@ -50,10 +54,12 @@ export interface CreateCategoryModalProps {
     name?: string;
     level?: number;
     path?: string;
+    businessDomain?: string;
     rootCode?: string;
     rootName?: string;
   } | null;
   submitLoading?: boolean;
+  defaultBusinessDomain?: string;
 }
 
 const CreateCategoryModal: React.FC<CreateCategoryModalProps> = ({
@@ -62,6 +68,7 @@ const CreateCategoryModal: React.FC<CreateCategoryModalProps> = ({
   onOk,
   parentNode,
   submitLoading,
+  defaultBusinessDomain,
 }) => {
   const [form] = Form.useForm();
   const { token } = theme.useToken();
@@ -72,17 +79,21 @@ const CreateCategoryModal: React.FC<CreateCategoryModalProps> = ({
     void ensureScene('category-admin');
   }, [ensureScene]);
 
-  const businessDomainEntries = getEntries('META_CATEGORY_BUSINESS_DOMAIN');
+  const businessDomainEntries = getEntries(CATEGORY_BUSINESS_DOMAIN_DICT_CODE);
   const statusEntries = getEntries('META_CATEGORY_STATUS').filter((entry) =>
     ['CREATED', 'EFFECTIVE', 'INVALID'].includes(String(entry.value).toUpperCase()),
   );
+  const activeBusinessDomain = parentNode?.businessDomain || defaultBusinessDomain || '';
+  const activeBusinessDomainDisplay = activeBusinessDomain
+    ? `${getCategoryBusinessDomainLabel(businessDomainEntries, activeBusinessDomain, activeBusinessDomain)} (${activeBusinessDomain})`
+    : '-';
 
   useEffect(() => {
     if (!open) return;
     form.setFieldsValue({
       code: '',
       name: '',
-      businessDomain: 'MATERIAL',
+      businessDomain: activeBusinessDomain,
       parentId: parentNode?.id || null,
       parentDisplay: parentNode?.code || parentNode?.name
         ? `${parentNode?.code || '-'} - ${parentNode?.name || '未命名分类'}`
@@ -100,7 +111,7 @@ const CreateCategoryModal: React.FC<CreateCategoryModalProps> = ({
       status: 'CREATED',
       description: EMPTY_QUILL_DELTA_JSON,
     });
-  }, [open, parentNode, form]);
+  }, [open, parentNode, form, defaultBusinessDomain]);
 
   const handleFinish = async (values: any) => {
     await onOk(values);
@@ -179,16 +190,11 @@ const CreateCategoryModal: React.FC<CreateCategoryModalProps> = ({
 
             <Row gutter={24}>
               <Col span={12}>
-                <Form.Item label="业务领域" name="businessDomain">
-                  <Select>
-                    {businessDomainEntries.length > 0
-                      ? businessDomainEntries.map((entry) => (
-                          <Option key={entry.value} value={entry.value}>
-                            {entry.label} ({entry.value})
-                          </Option>
-                        ))
-                      : <Option value="MATERIAL">物料 (MATERIAL)</Option>}
-                  </Select>
+                <Form.Item label="业务领域">
+                  <Input readOnly value={activeBusinessDomainDisplay} style={readOnlyStyle} />
+                </Form.Item>
+                <Form.Item name="businessDomain" hidden>
+                  <Input />
                 </Form.Item>
               </Col>
               <Col span={12}>

@@ -27,6 +27,7 @@ import {
 import { semanticStatusColors } from "@/styles/colors";
 
 interface AdminCategoryTreeProps extends CategoryTreeProps {
+  defaultBusinessDomain?: string;
   onMenuClick?: (key: string, node: DataNode) => void;
   onBatchDelete?: (nodes: DataNode[]) => void;
   onTransferSuccess?: (response: MetaCategoryBatchTransferResponseDto | MetaCategoryBatchTransferTopologyResponseDto) => void;
@@ -58,6 +59,7 @@ const statusActionLabel: Record<CategorySemanticStatus, string> = {
 };
 
 const AdminCategoryTree: React.FC<AdminCategoryTreeProps> = ({
+  defaultBusinessDomain,
   onMenuClick,
   onBatchDelete,
   onTransferSuccess,
@@ -75,6 +77,7 @@ const AdminCategoryTree: React.FC<AdminCategoryTreeProps> = ({
     name?: string;
     level?: number;
     path?: string;
+      businessDomain?: string;
     rootCode?: string;
     rootName?: string;
   } | null>(null);
@@ -217,6 +220,7 @@ const AdminCategoryTree: React.FC<AdminCategoryTreeProps> = ({
             name: nodeRef.name,
             level: nodeRef.level,
             path: nodeRef.path,
+            businessDomain: nodeRef.businessDomain,
             rootCode: undefined,
             rootName: undefined,
           }
@@ -227,7 +231,7 @@ const AdminCategoryTree: React.FC<AdminCategoryTreeProps> = ({
     if (!nodeRef?.id) return;
 
     metaCategoryApi
-      .getNodePath(nodeRef.id, nodeRef.businessDomain || "MATERIAL")
+      .getNodePath(nodeRef.id, nodeRef.businessDomain || defaultBusinessDomain || '')
       .then((pathNodes) => {
         const rootNode = pathNodes?.[0];
         if (!rootNode) return;
@@ -337,6 +341,7 @@ const AdminCategoryTree: React.FC<AdminCategoryTreeProps> = ({
       <CreateCategoryModal
         open={createModalVisible}
         parentNode={createParentNode}
+        defaultBusinessDomain={defaultBusinessDomain}
         submitLoading={createSubmitting}
         onCancel={() => setCreateModalVisible(false)}
         onOk={async (values) => {
@@ -372,6 +377,7 @@ const AdminCategoryTree: React.FC<AdminCategoryTreeProps> = ({
         actionType={transferAction}
         checkedKeys={transferCheckedKeys}
         fullTreeData={props.treeData}
+        defaultBusinessDomain={defaultBusinessDomain}
         onCancel={() => setTransferModalVisible(false)}
         onSuccess={(response) => {
           onTransferSuccess?.(response);

@@ -17,6 +17,7 @@ interface BatchTransferModalProps {
   fullTreeData: DataNode[];
   onCancel: () => void;
   onSuccess?: (response: MetaCategoryBatchTransferResponseDto | MetaCategoryBatchTransferTopologyResponseDto) => void;
+  defaultBusinessDomain?: string;
 }
 
 const formatNodeTitle = (code?: string | null, name?: string | null, fallback?: string) => {
@@ -175,7 +176,8 @@ export default function BatchTransferModal({
   checkedKeys,
   fullTreeData,
   onCancel,
-  onSuccess
+  onSuccess,
+  defaultBusinessDomain,
 }: BatchTransferModalProps) {
   const { message } = App.useApp();
   const checkedKeySet = useMemo(
@@ -190,9 +192,9 @@ export default function BatchTransferModal({
     return (
       selectedRootNodes
         .map((node) => getNodeDataRef(node)?.businessDomain)
-        .find((value): value is string => Boolean(value)) || 'MATERIAL'
+        .find((value): value is string => Boolean(value)) || defaultBusinessDomain || ''
     );
-  }, [selectedRootNodes]);
+  }, [defaultBusinessDomain, selectedRootNodes]);
   const [sourceNodesData, setSourceNodesData] = useState<TransferTreeNode[]>([]);
   const [sourceLoading, setSourceLoading] = useState(false);
 
