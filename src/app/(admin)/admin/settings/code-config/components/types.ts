@@ -192,8 +192,14 @@ export const generateSegmentPreview = (segment: CodeSegment): string => {
     }
     case 'VARIABLE':
       return `{${VARIABLE_KEY_OPTIONS.find(o => o.value === segment.variableKey)?.label || '变量'}}`;
-    case 'SEQUENCE':
-      return '0'.repeat(Math.max(0, (segment.length || 4) - 1)) + '1';
+    case 'SEQUENCE': {
+      const digitCount = Math.max(1, segment.length ?? 4);
+      const startValue = Math.max(0, segment.startValue ?? 1);
+      const step = Math.max(1, segment.step ?? 1);
+      const paddedStart = startValue.toString().padStart(digitCount, '0');
+
+      return step === 1 ? paddedStart : `${paddedStart}(+${step})`;
+    }
   }
 };
 
