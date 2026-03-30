@@ -205,42 +205,20 @@ const buildBackendPreviewNode = (params: {
 
   return {
     key: `tab-${subRuleKey}-backend`,
-    title: createTextTitle('后端预览', preview.examples[0] || '未生成样例', true),
-    children: [
-      {
-        key: `tab-${subRuleKey}-backend-sequence-scope`,
-        title: createTextTitle('序列桶', preview.resolvedSequenceScope || '未返回'),
-        isLeaf: true,
-      },
-      {
-        key: `tab-${subRuleKey}-backend-period-key`,
-        title: createTextTitle('周期桶', preview.resolvedPeriodKey || '未返回'),
-        isLeaf: true,
-      },
-      {
-        key: `tab-${subRuleKey}-backend-context`,
-        title: createTextTitle(
-          '预览上下文',
-          Object.entries(preview.resolvedContext || {}).map(([contextKey, value]) => `${contextKey}=${value}`).join(' / ') || '无',
-        ),
-        isLeaf: true,
-      },
-      {
-        key: `tab-${subRuleKey}-backend-examples`,
-        title: createTextTitle('样例列表', preview.examples.join(' / ') || '无'),
-        isLeaf: true,
-      },
-      {
-        key: `tab-${subRuleKey}-backend-warnings`,
-        title: createTextTitle('预览警告', preview.warnings.join(' / ') || '无'),
-        isLeaf: true,
-      },
-      ...(hasUnsavedChanges ? [{
-        key: `tab-${subRuleKey}-backend-stale`,
-        title: createTextTitle('提示', '当前存在未保存修改，后端预览基于最近一次保存版本'),
-        isLeaf: true,
-      }] : []),
-    ],
+    title: createTextTitle('后端编码结果', preview.examples[0] || '未生成编码', true),
+    children: preview.examples.length > 0
+      ? preview.examples.map((example, index) => ({
+          key: `tab-${subRuleKey}-backend-example-${index}`,
+          title: createTextTitle(`编码样例 ${index + 1}`, example, index === 0),
+          isLeaf: true,
+        }))
+      : [
+          {
+            key: `tab-${subRuleKey}-backend-example-empty`,
+            title: createTextTitle('后端编码结果', '未生成编码样例'),
+            isLeaf: true,
+          },
+        ],
   };
 };
 
@@ -484,7 +462,7 @@ const CodeRulePreviewPanel: React.FC<CodeRulePreviewPanelProps> = ({ rule, activ
       >
         <Text strong style={{ fontSize: 14 }}>配置预览</Text>
         <Text type="secondary" style={{ fontSize: 12 }}>
-          以树形结构展示当前配置、本地预览和当前页签的后端预览结果。
+          展示当前配置生成的编码结果，后端预览仅保留可直接核对的编码样例。
         </Text>
       </Flex>
 
