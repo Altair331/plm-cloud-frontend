@@ -43,6 +43,7 @@ export type ToolbarAction =
       icon: React.ReactNode;
       tooltip: string;
       menuItems: MenuProps['items'];
+      onMenuClick?: (info: { key: string }) => void;
       trigger?: Array<'click' | 'hover' | 'contextMenu'>;
       variant?: 'primary' | 'neutral' | 'danger';
       size?: number;
@@ -88,7 +89,7 @@ const renderAction = (action: ToolbarAction, token: ReturnType<typeof theme.useT
     return (
       <Dropdown
         key={action.key}
-        menu={{ items: action.menuItems }}
+        menu={{ items: action.menuItems, onClick: action.onMenuClick }}
         trigger={action.trigger || ['click']}
         disabled={action.disabled}
       >

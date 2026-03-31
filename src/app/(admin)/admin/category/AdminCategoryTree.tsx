@@ -17,6 +17,7 @@ import CategoryTree, {
 import FloatingContextMenu from "@/components/ContextMenu/FloatingContextMenu";
 import CreateCategoryModal from "./components/CreateCategoryModal";
 import BatchTransferModal from "./components/BatchTransferModal";
+import CategoryImportModal from "./components/import/CategoryImportModal";
 import AdminCategoryTreeToolbar from "./components/AdminCategoryTreeToolbar";
 import {
   metaCategoryApi,
@@ -93,6 +94,9 @@ const AdminCategoryTree: React.FC<AdminCategoryTreeProps> = ({
   const [transferModalVisible, setTransferModalVisible] = useState(false);
   const [transferAction, setTransferAction] = useState<'move' | 'copy' | null>(null);
   const [transferCheckedKeys, setTransferCheckedKeys] = useState<React.Key[]>([]);
+
+  // === 导入弹窗状态 ===
+  const [importModalVisible, setImportModalVisible] = useState(false);
 
   // Add global contextmenu interception
   useEffect(() => {
@@ -308,6 +312,7 @@ const AdminCategoryTree: React.FC<AdminCategoryTreeProps> = ({
                 setTransferCheckedKeys(checkedKeys);
                 setTransferModalVisible(true);
               }}
+              onImport={() => setImportModalVisible(true)}
             />
           );
         }}
@@ -384,6 +389,17 @@ const AdminCategoryTree: React.FC<AdminCategoryTreeProps> = ({
           onTransferSuccess?.(response);
           messageApi.success("批量移动/复制已完成，分类树已刷新");
         }}
+      />
+
+      {/* 导入分类弹窗 */}
+      <CategoryImportModal
+        open={importModalVisible}
+        onCancel={() => setImportModalVisible(false)}
+        onSuccess={() => {
+          setImportModalVisible(false);
+          messageApi.success("分类导入完成");
+        }}
+        defaultBusinessDomain={defaultBusinessDomain}
       />
     </>
   );

@@ -24,6 +24,7 @@ export interface AdminCategoryTreeToolbarProps {
   onDelete: () => void;
   onCut: () => void;
   onCopy: () => void;
+  onImport?: () => void;
   toolbarState: CategoryTreeToolbarState;
 }
 
@@ -40,9 +41,16 @@ const AdminCategoryTreeToolbar: React.FC<AdminCategoryTreeToolbarProps> = ({
   onDelete,
   onCut,
   onCopy,
+  onImport,
   toolbarState,
 }) => {
   const { token } = theme.useToken();
+
+  const handleMoreMenuClick = (info: { key: string }) => {
+    if (info.key === 'import') {
+      onImport?.();
+    }
+  };
 
   const primaryActions: ToolbarAction[] = [
     {
@@ -85,6 +93,7 @@ const AdminCategoryTreeToolbar: React.FC<AdminCategoryTreeToolbarProps> = ({
       icon: <MoreOutlined />,
       tooltip: "更多操作",
       menuItems: moreMenuItems,
+      onMenuClick: handleMoreMenuClick,
       variant: "neutral",
     },
   ];
