@@ -17,7 +17,7 @@ import CategoryTree, {
 import FloatingContextMenu from "@/components/ContextMenu/FloatingContextMenu";
 import CreateCategoryModal from "./components/CreateCategoryModal";
 import BatchTransferModal from "./components/BatchTransferModal";
-import CategoryImportModal from "./components/import/CategoryImportModal";
+import WorkbookImportModal from "./components/import/WorkbookImportModal";
 import AdminCategoryTreeToolbar from "./components/AdminCategoryTreeToolbar";
 import {
   metaCategoryApi,
@@ -392,7 +392,7 @@ const AdminCategoryTree: React.FC<AdminCategoryTreeProps> = ({
       />
 
       {/* 导入分类弹窗 */}
-      <CategoryImportModal
+      <WorkbookImportModal
         open={importModalVisible}
         onCancel={() => setImportModalVisible(false)}
         onSuccess={() => {
