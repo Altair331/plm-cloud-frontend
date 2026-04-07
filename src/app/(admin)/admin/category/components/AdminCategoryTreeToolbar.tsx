@@ -83,7 +83,7 @@ const AdminCategoryTreeToolbar: React.FC<AdminCategoryTreeToolbarProps> = ({
     {
       key: "export",
       icon: <ExportOutlined />,
-      tooltip: "导出已选分类",
+      tooltip: "导出",
       onClick: onExport,
       variant: "neutral",
     },

@@ -18,6 +18,7 @@ import FloatingContextMenu from "@/components/ContextMenu/FloatingContextMenu";
 import CreateCategoryModal from "./components/CreateCategoryModal";
 import BatchTransferModal from "./components/BatchTransferModal";
 import WorkbookImportModal from "./components/import/WorkbookImportModal";
+import CategoryExportModal from "./components/export/CategoryExportModal";
 import AdminCategoryTreeToolbar from "./components/AdminCategoryTreeToolbar";
 import {
   metaCategoryApi,
@@ -123,6 +124,10 @@ const AdminCategoryTree: React.FC<AdminCategoryTreeProps> = ({
 
   // === 导入弹窗状态 ===
   const [importModalVisible, setImportModalVisible] = useState(false);
+
+  // === 导出弹窗状态 ===
+  const [exportModalVisible, setExportModalVisible] = useState(false);
+  const [exportCheckedKeys, setExportCheckedKeys] = useState<React.Key[]>([]);
 
   // Add global contextmenu interception
   useEffect(() => {
@@ -405,7 +410,8 @@ const AdminCategoryTree: React.FC<AdminCategoryTreeProps> = ({
               onImport={() => setImportModalVisible(true)}
               onExport={() => {
                 if (!hasCheckedNodes) return;
-                void exportCheckedNodes(checkedKeys);
+                setExportCheckedKeys(checkedKeys);
+                setExportModalVisible(true);
               }}
             />
           );
@@ -494,6 +500,16 @@ const AdminCategoryTree: React.FC<AdminCategoryTreeProps> = ({
           messageApi.success("分类导入完成");
         }}
         defaultBusinessDomain={defaultBusinessDomain}
+      />
+
+      {/* 导出分类弹窗 */}
+      <CategoryExportModal
+        open={exportModalVisible}
+        checkedKeys={exportCheckedKeys}
+        onCancel={() => setExportModalVisible(false)}
+        onSuccess={() => {
+          messageApi.success("分类导出完成");
+        }}
       />
     </>
   );
