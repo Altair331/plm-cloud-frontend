@@ -1,6 +1,6 @@
 ---
 name: plm-frontend-page-design
-description: 基于 PLM Cloud Frontend（Next.js App Router + TypeScript + Ant Design + ProLayout）的页面设计与实现规范。只要用户提到“页面设计”“后台页面”“管理端界面”“列表/表单/详情页”“主题风格统一”“按现有项目风格开发新页面”，都应优先使用本技能，即使用户没有明确说“用 skill”。
+description: 基于 PLM Cloud Frontend（Next.js App Router + TypeScript + Ant Design + ProLayout）的页面设计与实现规范。只要用户提到"页面设计""后台页面""管理端界面""列表/表单/详情页""主题风格统一""按现有项目风格开发新页面""参考现有设计"，都应优先使用本技能，即使用户没有明确说"用 skill"。
 compatibility:
   framework: Next.js 16 App Router
   language: TypeScript + React 19
@@ -9,115 +9,161 @@ compatibility:
 
 # PLM 前端页面设计 Skill
 
-用于在当前仓库中新增或改造页面时，保证技术实现、目录结构与视觉风格一致，避免出现“能用但不统一”的页面。
+用于在当前仓库中新增或改造页面时，保证技术实现、目录结构与视觉风格完全对齐现有实现。设计规则均来自对已有代码的逐行提炼，不引入任何额外风格。
 
-## 1. 项目基线（必须对齐）
+---
 
-- 路由框架：`Next.js App Router`，目录在 `src/app/`，按路由组组织（如 `(admin)`、`(auth)`、`(main)`）。
-- UI 体系：`antd@6` + `@ant-design/pro-components`，布局基于 `src/layouts/UnifiedLayout.tsx`。
+## 1. 项目基线
+
+- 路由框架：`Next.js App Router`，目录在 `src/app/`，按路由组组织（`(admin)`、`(auth)`、`(main)`）
+- UI 体系：`antd@6` + `@ant-design/pro-components`，布局基于 `src/layouts/UnifiedLayout.tsx`
 - 主题来源：
-  - 设计 token：`src/styles/theme.ts`
-  - 调色板：`src/styles/colors.ts`
-  - 全局主题变量与滚动条/菜单样式：`src/app/globals.css`
-- 页面应复用已有组件与交互模式，优先放在：
-  - 通用组件：`src/components/`
-  - 业务功能：`src/features/<domain>/`
-  - 路由页面：`src/app/<route>/page.tsx`
+  - 设计 token：`src/styles/theme.ts`（`themeTokens`：`colorPrimary: '#0f62fe'`，`borderRadius: 10`，`headerHeight: 56`，`siderWidth: 224`）
+  - 调色板：`src/styles/colors.ts`（`lightPalette` / `darkPalette`，通过 `getPalette(mode)` 获取）
+  - CSS 变量由 `UnifiedLayout` 在 `html` 元素的 `data-theme` 上维护，如 `--menu-*`、`--tab-*`
+- 每个路由组必须有 `layout.tsx`，使用 `UnifiedLayout` 传入 `menuData`
+- 页面文件落点：
+  - 管理端：`src/app/(admin)/admin/<module>/[id]/page.tsx` 或 `page.tsx`
+  - 主业务端：`src/app/(main)/<module>/page.tsx`
+  - 模块内组件：`<module>/components/*.tsx`
+  - 跨模块组件：`src/components/<ComponentName>/`
+  - 业务功能抽象：`src/features/<domain>/`
+  - 领域模型：`src/models/<domain>.ts`
+  - 接口服务：`src/services/<domain>.ts`
+  - 全局上下文：`src/contexts/`，注入入口：`src/components/providers/AppProviders.tsx`
 
-## 2. 风格与视觉规范
+### 1.1 当前目录映射（2026-03）
 
-### 2.1 颜色与主题
-
-- 主色使用 `#0f62fe`（来源 `themeTokens.colorPrimary`）。
-- 必须兼容明暗主题，禁止写死单一背景/文字色。
-- 页面容器、文字、边框颜色优先从 Antd `theme.useToken()` 或 `palette` 映射值获取。
-- 菜单、Tab、悬停、选中态必须与 `globals.css` 中 CSS 变量一致（如 `--menu-*`、`--tab-*`）。
-
-### 2.2 空间与层次
-
-- 页面主容器遵循当前布局节奏：外层间距 `16px`，卡片圆角 `12px`，分区阴影与边框风格保持一致。
-- 工具栏高度、分割线、列表密度保持企业后台风格：紧凑、可扫描、不过度装饰。
-- 信息层级顺序：`页面标题/工具条 -> 筛选区 -> 主内容区 -> 分页或辅助信息`。
-
-### 2.3 组件选型
-
-- 列表/表格优先：`ProTable` 或 `Table`（视复杂度）。
-- 表单优先：`Form` + `Form.Item` + Antd 规范校验。
-- 详情/分区优先：`Card`、`Descriptions`、`Tabs`。
-- 图标优先 `@ant-design/icons`，仅在已有模块已使用 MUI 图标时才局部延续。
-
-## 3. 页面开发流程（执行步骤）
-
-1. 先确认页面类型：列表页、表单页、详情页、工作台页。
-2. 定位路由组与落地目录，遵循现有 `src/app/(...)/...` 组织方式。
-3. 拆分页面为：容器层（状态/请求）+ 展示层（纯 UI）。
-4. 请求逻辑通过 `src/services/` 与 `src/hooks/useRequest.ts` 风格处理，不在组件内散落硬编码请求。
-5. 将复用度高的片段抽到 `src/components/` 或 `src/features/`，避免在 `page.tsx` 堆积实现。
-6. 用 token/palette 校准主题，检查明暗模式表现。
-7. 完成后进行最小可用验证：路由可达、交互可用、主题一致、无明显样式漂移。
-
-## 4. 输出要求（给开发者/AI 的交付格式）
-
-每次产出页面方案时，按以下结构输出：
-
-1. 页面目标：一句话说明业务目的。
-2. 信息架构：页面区块划分与关键交互。
-3. 文件变更清单：明确到路径（新增/修改）。
-4. 关键实现代码：仅给核心片段，不贴无关样板。
-5. 风格对齐说明：说明如何复用 `themeTokens`、`palette`、`UnifiedLayout` 约定。
-6. 验证清单：列出可手工验证的 5-8 条检查项。
-
-## 5. 禁止事项
-
-- 不要引入与当前项目冲突的全新 UI 体系（如 Tailwind-only 重写）。
-- 不要绕开 `App Router` 采用旧式页面组织。
-- 不要大量内联硬编码颜色、圆角、阴影，破坏主题统一。
-- 不要为了“炫技”加入与业务无关的复杂动画。
-- 不要修改 `UnifiedLayout` 的全局行为，除非用户明确要求。
-
-## 6. 可复用页面骨架（示例）
-
-```tsx
-'use client';
-
-import { Card, Space, Typography, theme } from 'antd';
-
-export default function ExamplePage() {
-  const { token } = theme.useToken();
-
-  return (
-    <Space direction="vertical" size={16} style={{ width: '100%' }}>
-      <Card
-        style={{
-          borderRadius: 12,
-          borderColor: token.colorBorderSecondary,
-        }}
-      >
-        <Typography.Title level={4} style={{ margin: 0 }}>
-          页面标题
-        </Typography.Title>
-      </Card>
-
-      <Card
-        style={{
-          borderRadius: 12,
-          borderColor: token.colorBorderSecondary,
-        }}
-      >
-        页面主内容
-      </Card>
-    </Space>
-  );
-}
+```
+src/app/(admin)/admin/
+  category/
+    [id]/page.tsx          # 分类管理主页（树 + Splitter + AttributeDesigner）
+    AdminCategoryTree.tsx  # 带工具栏的分类树适配层
+    AttributeDesigner.tsx  # 属性设计工作台（列表 + 工作区 Splitter）
+    components/
+      AttributeList.tsx
+      AttributeWorkspace.tsx
+      BatchDeleteModal.tsx
+      BatchTransferModal.tsx
+      CreateCategoryModal.tsx
+      toolbarStyles.ts     # 工具栏样式常量与工厂函数
+      types.ts
+    batch-transfer/components/
+      ActionFooter.tsx
+      BatchTransferDryRunPanel.tsx
+      DraggableSourceTree.tsx
+      DropTargetTree.tsx
+      TransferWorkspace.tsx
+      dnd-tree-styles.ts
+      transferNodeStyles.ts
+  dashboard/page.tsx       # 概览（Card + Statistic + Row/Col）
+  users/page.tsx           # 用户表格（ProTable）
+  settings/page.tsx        # redirect → code-config
+  settings/code-config/page.tsx  # 空（待开发）
+src/components/
+  ContextMenu/FloatingContextMenu.tsx
+  DraggableModal/index.tsx
+  VersionGraph/index.tsx
+src/features/category/CategoryTree.tsx
+src/contexts/DictionaryContext.tsx
 ```
 
-## 7. 设计质量自检清单
+---
 
-- 是否遵循了 `src/app` 路由与目录规范。
-- 是否使用了统一 token，而非硬编码风格值。
-- 是否在明暗模式下都可读、可用。
-- 是否复用了现有组件/布局，而非重复造轮子。
-- 是否将业务逻辑与展示逻辑做了合理分层。
-- 是否保留企业后台的清晰信息密度与操作路径。
+## 2. Token 使用速查表
 
-当用户要求“按当前项目风格设计/实现新页面”时，直接执行本 skill。
+| 用途 | Token |
+|------|-------|
+| 主容器背景 | `token.colorBgContainer` |
+| 布局背景 | `token.colorBgLayout` |
+| 次级填充（card alt） | `token.colorFillAlter` |
+| 四级填充 | `token.colorFillQuaternary` |
+| 禁用背景 | `token.colorBgContainerDisabled` |
+| 主边框 | `token.colorBorder` |
+| 次级边框 | `token.colorBorderSecondary` |
+| 主文字 | `token.colorText` |
+| 次级文字 | `token.colorTextSecondary` |
+| 三级文字 | `token.colorTextTertiary` |
+| 最浅文字 | `token.colorTextQuaternary` |
+| 禁用文字 | `token.colorTextDisabled` |
+| 主色 | `token.colorPrimary` |
+| 主色背景 | `token.colorPrimaryBg` |
+| 主色边框 | `token.colorPrimaryBorder` |
+| 信息背景 | `token.colorInfoBg` |
+| 信息边框 | `token.colorInfoBorder` |
+| 成功色（复制按钮） | `token.colorSuccess` |
+| 行悬停背景 | `token.controlItemBgHover` |
+| 行激活背景 | `token.controlItemBgActive` |
+| 大圆角 | `token.borderRadiusLG` |
+
+**注意：** CSS 变量 `var(--ant-color-bg-container, #fff)` 仅在无法用 token hook 的地方（如 Splitter style 等 antd 内部节点）使用。
+
+---
+
+## 3. 代码编写风格
+
+### 3.1 命名约定
+
+- 组件 / 文件：PascalCase（`AttributeWorkspace`、`CategoryTree`）
+- Hook：`useXxx`，返回 `{ data, loading, error, run }` 等稳定结构
+- 事件处理：`handleXxx`；映射/规范化：`mapXxx`、`normalizeXxx`
+- 常量：全大写下划线（`TOOLBAR_ICON_BUTTON_SIZE`、`LIST_GRID_TEMPLATE_COLUMNS`）
+- Style 常量文件：`xxxStyles.ts`，与组件文件同目录
+
+### 3.2 类型约束
+
+- 所有 Props、DTO、ViewModel 显式声明 interface/type，避免隐式 any
+- 后端 DTO 放 `src/models/`，页面 ViewModel 就地声明（小）或放 `components/types.ts`（大）
+- 分页：`{ content, totalElements, totalPages, size, number }` 统一结构
+
+### 3.3 状态与副作用
+
+- 函数组件 + hooks；`useMemo` 做派生状态
+- `useEffect` 清理：事件监听、beforeunload、observer 必须清理
+- 多选、脏数据、未保存离开必须显式状态化
+
+### 3.4 服务层
+
+- 所有接口调用走 `src/services/*.ts`，不在组件内写 axios
+- 路径参数用 `encodeURIComponent` 处理
+- service 层透传错误，页面层负责 `message.error` 提示
+
+### 3.5 UI 细节
+
+- 图标库可混用（antd + MUI），但同一模块保持统一
+- 中英文混合文案保留，但同一交互链路语气一致
+- 注释说明"意图与边界"，不解释显而易见的代码
+
+---
+
+## 4. 禁止事项
+
+- 不要引入与当前项目冲突的全新 UI 体系（如 Tailwind-only）
+- 不要绕开 App Router 采用旧式页面组织
+- 不要大量内联硬编码颜色（背景色、边框色必须用 token）
+- 不要把工具栏按钮写成方形—— 本项目圆形按钮使用 `borderRadius: 999`
+- 不要跳过 DraggableModal 直接用 Modal（所有表单类弹窗统一用 DraggableModal）
+- 不要在弹窗 footer 放保存按钮（保存按钮在 body 顶部的 Space 里）
+- 不要使用 any 类型
+- 不要把模块私有组件放到 `src/components/`，先判断是否跨模块
+- 不要在 JSX 里内联复杂数据映射，集中到 `mapXxx` 函数
+- 不要使用大量的局部CSS，优先使用antd框架内支持的token或 CSS 变量
+- 不要使用大量的卡片化ui设计，优先考虑列表、表单、详情页等更紧凑的设计模式
+
+---
+
+## 5. 设计质量自检
+
+- [ ] 高度计算用 `calc(100vh - 163px)`，不写死 px
+- [ ] 工具栏 46~48px，圆形按钮 24px，间距 6px
+- [ ] `Splitter` 容器有 `overflow: hidden`，Panel 有 `flex: 1, minHeight: 0`
+- [ ] Drawer 在面板内：`getContainer={false}` + `rootStyle={{ position: 'absolute' }}`
+- [ ] 脏检查用 `normalizeXxx` + JSON.stringify 比较
+- [ ] `modal.confirm` 来自 `App.useApp()`，不用全局 `Modal.confirm`
+- [ ] 枚举标签通过 `useDictionary().getLabel` 获取，不硬编码中文
+- [ ] 明暗模式下所有背景/文字/边框均用 token（无 #fff / #000 硬编码）
+- [ ] 表单弹窗关闭前有脏检查，`maskClosable={false}` + `keyboard={false}`
+- [ ] 新增页面无遗漏的 `use client` 声明（交互页面均需）
+- [ ] 使用`npx tsc --noEmit`检查无类型错误，无输出则表示通过
+
+当用户要求"按当前项目风格设计/实现新页面"时，直接执行本 skill，严格遵循本文档中的所有模式。

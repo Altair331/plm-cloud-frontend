@@ -1,10 +1,6 @@
 ---
 name: plm-frontend-backend-api-integration
 description: PLM Cloud 前后端接口对接标准规范（Next.js + TypeScript + Axios + Java API）。当用户提到“接口对接”“联调规范”“字段映射”“DTO定义”“接口错误处理”“新增后端接口接入页面”“前后端联调流程”时，必须优先使用本技能，按既有项目结构输出完整对接方案与落地文件清单。
-compatibility:
-  frontend: Next.js 16 App Router + TypeScript + Ant Design
-  backend: Spring Boot REST API
-  transport: Axios
 ---
 
 # PLM 前后端接口对接标准规范 Skill
@@ -55,7 +51,17 @@ compatibility:
 
 - 属性 API：`../plm-cloud-platform/api-document/api-specification-documentation/attribute-api.md`
 - 分类 API：`../plm-cloud-platform/api-document/api-specification-documentation/category-api.md`
+- 分类移动或复制 API：`../plm-cloud-platform/api-document/api-specification-documentation/category-batch-transfer-api.md`
+- 字典 API：`../plm-cloud-platform/api-document/api-specification-documentation/dictionary-api.md`
+- 编码规则 API：`../plm-cloud-platform/api-document/api-specification-documentation/code-rule-api.md`
 
+### 2.6 后端代码（副参考）
+
+- controller 层：`../plm-cloud-platform/plm-attribute-service/src/main/java/com/plm/attribute/version/controller`
+- service 层：`../plm-cloud-platform/plm-attribute-service/src/main/java/com/plm/attribute/version/service`
+- dto 层：`../plm-cloud-platform/plm-common/src/main/java/com/plm/common/api/dto`
+- domain 层：`../plm-cloud-platform/plm-common/src/main/java/com/plm/common/version/domain`
+- repository 层：`../plm-cloud-platform/plm-infrastructure/src/main/java/com/plm/infrastructure/version/repository`
 ## 3. 标准对接流程（必须按顺序执行）
 
 1. 明确业务场景与接口能力
@@ -104,6 +110,7 @@ compatibility:
 - 不要把 mock 与真实接口混用却无标识；mock 文件需明确注释并给出替换目标。
 - 不要让同一领域出现多套分页结构，统一走 PageResponse。
 - 不要修改全局 `request.ts` 行为来适配单接口，优先在服务层局部处理。
+- 页面lint语法检测使用 npx tsc --noEmit 来检查类型错误。默认无输出表示检查通过，出现错误时会有详细的错误信息和文件位置提示。
 
 ## 5. 推荐文件落位模板（新增接口时）
 
@@ -193,4 +200,4 @@ const mapDtoToView = (dto: ExampleItemDto) => ({
 6. 联调验证清单（主流程 + 边界）
 7. 风险点与回滚建议
 
-当用户说“按项目现有方式做接口联调/对接”时，直接执行本 skill。
+当用户说“按项目现有方式做接口联调/对接或者实现接口对接”时，直接执行本 skill。

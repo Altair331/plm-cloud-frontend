@@ -67,8 +67,8 @@
 .art-background {
   position: absolute;
   bottom: 0;
-  left: 0px; /* 贴左侧 */
-  width: 1000px; /* 固定宽度 */
+  left: 50%; /* 贴左侧 */
+  width: 100%; /* 固定宽度 */
   height: auto;
   pointer-events: none;
 }
