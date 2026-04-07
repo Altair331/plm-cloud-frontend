@@ -44,6 +44,7 @@ interface AttributeListProps {
   onDuplicateAttribute?: (item: AttributeItem) => void;
   onDeleteAttribute?: (item: AttributeItem) => void;
   onBatchRemoveAttributes?: (ids: string[]) => void;
+  onExportAttributes?: () => void;
 }
 
 const { Text } = Typography;
@@ -248,6 +249,7 @@ const AttributeList: React.FC<AttributeListProps> = ({
   onDuplicateAttribute,
   onDeleteAttribute,
   onBatchRemoveAttributes,
+  onExportAttributes,
 }) => {
   const { token } = theme.useToken();
   const listRef = useRef<HTMLDivElement>(null);
@@ -515,9 +517,10 @@ const AttributeList: React.FC<AttributeListProps> = ({
       icon: <ExportOutlined />,
       tooltip: '导出属性',
       variant: 'neutral',
-      disabled: true,
+      disabled: dataSource.length === 0,
+      onClick: () => onExportAttributes?.(),
     },
-  ], [handleToolbarDuplicate, singleSelectedAttribute]);
+  ], [dataSource.length, handleToolbarDuplicate, onExportAttributes, singleSelectedAttribute]);
 
   const filteredIds = filteredData.map((item) => item.id);
   const filteredSet = new Set(filteredIds);

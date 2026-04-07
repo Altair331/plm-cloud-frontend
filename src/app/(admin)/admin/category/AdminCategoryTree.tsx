@@ -18,7 +18,7 @@ import FloatingContextMenu from "@/components/ContextMenu/FloatingContextMenu";
 import CreateCategoryModal from "./components/CreateCategoryModal";
 import BatchTransferModal from "./components/BatchTransferModal";
 import WorkbookImportModal from "./components/import/WorkbookImportModal";
-import CategoryExportModal from "./components/export/CategoryExportModal";
+import WorkbookExportModal from "./components/export/WorkbookExportModal";
 import AdminCategoryTreeToolbar from "./components/AdminCategoryTreeToolbar";
 import {
   metaCategoryApi,
@@ -502,13 +502,13 @@ const AdminCategoryTree: React.FC<AdminCategoryTreeProps> = ({
         defaultBusinessDomain={defaultBusinessDomain}
       />
 
-      {/* 导出分类弹窗 */}
-      <CategoryExportModal
+      {/* 导出完整数据弹窗 */}
+      <WorkbookExportModal
         open={exportModalVisible}
         checkedKeys={exportCheckedKeys}
         onCancel={() => setExportModalVisible(false)}
         onSuccess={() => {
-          messageApi.success("分类导出完成");
+          messageApi.success("完整数据导出文件已生成");
         }}
       />
     </>

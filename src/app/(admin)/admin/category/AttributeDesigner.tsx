@@ -11,6 +11,7 @@ import {
 } from "antd";
 import AttributeList from "./components/AttributeList";
 import AttributeWorkspace from "./components/AttributeWorkspace";
+import AttributeExportModal from "./components/export/AttributeExportModal";
 import { AttributeItem, EnumOptionItem } from "./components/types";
 import { metaAttributeApi } from "@/services/metaAttribute";
 import {
@@ -105,6 +106,7 @@ const AttributeDesigner: React.FC<Props> = ({
   const [previewWarnings, setPreviewWarnings] = useState<string[]>([]);
   const [allowManualCodeOverride, setAllowManualCodeOverride] = useState(false);
   const [allowManualEnumCodeOverride, setAllowManualEnumCodeOverride] = useState(false);
+  const [attributeExportVisible, setAttributeExportVisible] = useState(false);
   const currentBusinessDomain = String(currentNode?.businessDomain || "").trim();
 
   // Helper: Map Backend DTO List Item to Frontend AttributeItem
@@ -808,6 +810,7 @@ const AttributeDesigner: React.FC<Props> = ({
             onDuplicateAttribute={handleDuplicateAttribute}
             onDeleteAttribute={handleDeleteAttribute}
             onBatchRemoveAttributes={handleBatchRemoveAttributes}
+            onExportAttributes={() => setAttributeExportVisible(true)}
           />
         </Splitter.Panel>
         <Splitter.Panel>
@@ -847,6 +850,14 @@ const AttributeDesigner: React.FC<Props> = ({
           />
         </Splitter.Panel>
       </Splitter>
+
+      <AttributeExportModal
+        open={attributeExportVisible}
+        attributes={dataSource}
+        selectedAttributeIds={selectedAttributeIds}
+        categoryTitle={currentNode?.title}
+        onCancel={() => setAttributeExportVisible(false)}
+      />
     </Layout>
   );
 };

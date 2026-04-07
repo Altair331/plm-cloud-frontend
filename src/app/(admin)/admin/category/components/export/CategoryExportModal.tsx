@@ -174,6 +174,10 @@ const CategoryExportModal: React.FC<CategoryExportModalProps> = ({
 
   // === 预览数据 ===
   const previewRows = useMemo(() => {
+    if (!config.columns.some(column => column.enabled)) {
+      return [];
+    }
+
     return buildPreviewRows(resolvedNodes.slice(0, 10), config.columns, config.transformRules, config.pathSeparator);
   }, [resolvedNodes, config.columns, config.transformRules, config.pathSeparator]);
 
@@ -405,8 +409,14 @@ const CategoryExportModal: React.FC<CategoryExportModalProps> = ({
       return;
     }
     const nextHeader = String(event.newValue ?? '').trim();
-    if (!nextHeader || nextHeader === event.data.targetHeader) {
-      event.node.setDataValue('targetHeader', event.data.targetHeader);
+    const previousHeader = String(event.oldValue ?? '').trim();
+
+    if (!nextHeader) {
+      event.node.setDataValue('targetHeader', previousHeader || event.data.targetHeader);
+      return;
+    }
+
+    if (nextHeader === previousHeader) {
       return;
     }
 
@@ -587,7 +597,7 @@ const CategoryExportModal: React.FC<CategoryExportModalProps> = ({
           padding: 12,
         }}>
           <Flex align="center" justify="space-between" style={{ marginBottom: 8 }}>
-            <Text style={{ fontSize: 13 }}>递归包含子孙</Text>
+            <Text style={{ fontSize: 13 }}>递归导出</Text>
             <Switch
               size="small"
               checked={config.includeChildren}
@@ -595,7 +605,7 @@ const CategoryExportModal: React.FC<CategoryExportModalProps> = ({
             />
           </Flex>
           <Text type="secondary" style={{ fontSize: 12 }}>
-            开启后将自动导出所选节点的全部子孙分类
+            开启后将自动导出所选节点及其全部子分类
           </Text>
         </div>
 
