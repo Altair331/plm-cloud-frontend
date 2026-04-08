@@ -11,7 +11,7 @@ import {
 } from "antd";
 import AttributeList from "./components/AttributeList";
 import AttributeWorkspace from "./components/AttributeWorkspace";
-import AttributeExportModal from "./components/export/AttributeExportModal";
+// import AttributeExportModal from "./components/export/AttributeExportModal";
 import { AttributeItem, EnumOptionItem } from "./components/types";
 import { metaAttributeApi } from "@/services/metaAttribute";
 import {
@@ -1007,13 +1007,13 @@ const AttributeDesigner: React.FC<Props> = ({
         </Splitter.Panel>
       </Splitter>
 
-      <AttributeExportModal
+      {/* <AttributeExportModal
         open={attributeExportVisible}
         attributes={dataSource}
         selectedAttributeIds={selectedAttributeIds}
         categoryTitle={currentNode?.title}
         onCancel={() => setAttributeExportVisible(false)}
-      />
+      /> */}
     </Layout>
   );
 };
