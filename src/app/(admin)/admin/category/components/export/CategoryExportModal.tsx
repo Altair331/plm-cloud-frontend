@@ -671,7 +671,7 @@ const CategoryExportModal: React.FC<CategoryExportModalProps> = ({
             <Flex align="center" gap={8} wrap>
               <Text style={{ fontSize: 13, whiteSpace: 'nowrap' }}>方案：</Text>
               <Select
-                size="small"
+                size="middle"
                 style={{ width: 160 }}
                 value={activeProfileId}
                 onChange={handleProfileChange}
@@ -685,10 +685,10 @@ const CategoryExportModal: React.FC<CategoryExportModalProps> = ({
                   ),
                 }))}
               />
-              <Button size="small" onClick={handleSaveAsProfile}>另存</Button>
+              <Button size="middle" onClick={handleSaveAsProfile}>另存</Button>
               {availableFields.length > 0 && (
                 <Select
-                  size="small"
+                  size="middle"
                   placeholder="添加字段..."
                   style={{ width: 130 }}
                   value={null}

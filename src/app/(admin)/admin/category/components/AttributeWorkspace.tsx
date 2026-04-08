@@ -27,6 +27,7 @@ import {
   Upload,
   Image,
   Slider,
+  Table,
 } from "antd";
 import type { MenuProps } from "antd";
 import {
@@ -86,6 +87,7 @@ interface AttributeWorkspaceProps {
 const { Option } = Select;
 const { Text, Title } = Typography;
 const { Panel } = Collapse;
+const READ_ONLY_ENUM_TABLE_HEADER_OFFSET = 47;
 
 const isEmptyDefaultValue = (value: AttributeItem["defaultValue"]) =>
   value === undefined || value === null || (Array.isArray(value) && value.length === 0);
@@ -165,6 +167,29 @@ const formatDefaultValueForDisplay = (
   return String(attribute.defaultValue);
 };
 
+const getRenderTypeLabel = (renderType?: AttributeItem["renderType"]) => {
+  if (renderType === "image") {
+    return "图片 (Image)";
+  }
+  if (renderType === "color") {
+    return "颜色 (Color)";
+  }
+  return "文本 (Text)";
+};
+
+const getEnumDefaultValueSet = (attribute: AttributeItem) => {
+  if (attribute.type === "multi-enum") {
+    return new Set(normalizeMultiEnumDefaultValue(attribute.defaultValue));
+  }
+
+  if (attribute.type === "enum") {
+    const normalized = normalizeDefaultValueForType(attribute.type, attribute.defaultValue);
+    return normalized ? new Set([String(normalized)]) : new Set<string>();
+  }
+
+  return new Set<string>();
+};
+
 const normalizeDefaultValueForType = (
   type: AttributeType,
   value: AttributeItem["defaultValue"],
@@ -213,8 +238,10 @@ const AttributeWorkspace: React.FC<AttributeWorkspaceProps> = ({
   const [form] = Form.useForm();
   const [isEditing, setIsEditing] = useState(false);
   const [numericDefaultSliderOpen, setNumericDefaultSliderOpen] = useState(false);
+  const [readOnlyEnumTableScrollY, setReadOnlyEnumTableScrollY] = useState(240);
   const [saveStatus, setSaveStatus] = useState<"idle" | "loading" | "success">("idle");
   const gridRef = useRef<AgGridReact>(null);
+  const readOnlyEnumTableContainerRef = useRef<HTMLDivElement | null>(null);
 
   const [contextMenu, setContextMenu] = useState<{
     open: boolean;
@@ -453,6 +480,32 @@ const AttributeWorkspace: React.FC<AttributeWorkspaceProps> = ({
     setNumericDefaultSliderOpen(false);
   }, [attribute?.id, attribute?.type]);
 
+  useEffect(() => {
+    const container = readOnlyEnumTableContainerRef.current;
+    if (!container || attribute?.type !== "enum" && attribute?.type !== "multi-enum") {
+      return;
+    }
+
+    const updateTableScrollY = () => {
+      const nextHeight = Math.max(
+        container.clientHeight - READ_ONLY_ENUM_TABLE_HEADER_OFFSET,
+        120,
+      );
+      setReadOnlyEnumTableScrollY(nextHeight);
+    };
+
+    updateTableScrollY();
+
+    const observer = new ResizeObserver(() => {
+      updateTableScrollY();
+    });
+
+    observer.observe(container);
+    return () => {
+      observer.disconnect();
+    };
+  }, [attribute?.id, attribute?.type, enumOptions.length]);
+
   /* Removed conflicting useEffects */
 
   if (!attribute) {
@@ -658,8 +711,106 @@ const AttributeWorkspace: React.FC<AttributeWorkspaceProps> = ({
     </Flex>
   );
 
-  const renderReadOnlyMeta = () => (
-    <div style={{ padding: 12, overflowY: "auto", height: "100%" }}>
+  const renderReadOnlyMeta = () => {
+    const sortedEnumOptions = [...enumOptions].sort(
+      (left, right) => (left.order ?? 0) - (right.order ?? 0),
+    );
+    const defaultValueSet = getEnumDefaultValueSet(attribute);
+    const isEnumType = attribute.type === "enum" || attribute.type === "multi-enum";
+    const enumTableColumns = [
+      {
+        title: "#",
+        dataIndex: "index",
+        key: "index",
+        width: 56,
+        align: "center" as const,
+        render: (_: unknown, __: EnumOptionItem, index: number) => (
+          <Text type="secondary">{index + 1}</Text>
+        ),
+      },
+      {
+        title: "枚举值",
+        dataIndex: "value",
+        key: "value",
+        width: attribute.renderType === "image" ? 120 : 220,
+        render: (value: string, option: EnumOptionItem, index: number) => (
+          <Flex align="center" gap={8}>
+            {option.image ? (
+              <Image
+                src={option.image}
+                alt={option.value || option.label || `enum-option-${index + 1}`}
+                width={24}
+                height={24}
+                style={{ objectFit: "cover", borderRadius: 4, flex: "0 0 auto" }}
+                preview={false}
+              />
+            ) : null}
+            <Text ellipsis style={{ minWidth: 0 }}>
+              {value || "-"}
+            </Text>
+          </Flex>
+        ),
+      },
+      {
+        title: "显示标签",
+        dataIndex: "label",
+        key: "label",
+        render: (value: string) => (
+          <Text ellipsis style={{ minWidth: 0 }}>
+            {value || "-"}
+          </Text>
+        ),
+      },
+      {
+        title: "编码",
+        dataIndex: "code",
+        key: "code",
+        width: 320,
+        render: (value: string) => (
+          <Text type="secondary" ellipsis style={{ minWidth: 0 }}>
+            {value || "-"}
+          </Text>
+        ),
+      },
+      {
+        title: "默认值",
+        key: "isDefault",
+        width: 96,
+        align: "center" as const,
+        render: (_: unknown, option: EnumOptionItem) => (
+          defaultValueSet.has(option.value) ? (
+            <Tag color="blue" style={{ marginInlineEnd: 0 }}>
+              默认
+            </Tag>
+          ) : (
+            <Text type="secondary">-</Text>
+          )
+        ),
+      },
+    ];
+
+    return (
+      <div
+        style={{
+          padding: 12,
+          height: "100%",
+          display: "flex",
+          flexDirection: "column",
+          minHeight: 0,
+          overflow: "hidden",
+        }}
+      >
+      <Title
+        level={5}
+        style={{
+          marginTop: 0,
+          marginBottom: 12,
+          fontSize: 16,
+          color: token.colorTextSecondary,
+        }}
+      >
+        基础信息 (Basic Information)
+      </Title>
       <Descriptions
         column={2}
         bordered
@@ -710,47 +861,136 @@ const AttributeWorkspace: React.FC<AttributeWorkspaceProps> = ({
         </Descriptions.Item>
       </Descriptions>
 
-      {/* Constraints Display */}
-      {(attribute.type === "number") && (
-        <div style={{ marginTop: 12 }}>
-          <Descriptions
-            title="约束 (Constraints)"
-            column={2}
-            bordered
-            size="small"
-            styles={{ label: { width: "120px" } }}
+      <Title
+        level={5}
+        style={{
+          marginTop: 16,
+          marginBottom: 12,
+          fontSize: 16,
+          color: token.colorTextSecondary,
+        }}
+      >
+        类型配置 (Type Configuration)
+      </Title>
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          flex: isEnumType ? 1 : "0 0 auto",
+          minHeight: 0,
+        }}
+      >
+        <Descriptions
+          column={2}
+          bordered
+          size="small"
+          styles={{ label: { width: "180px" } }}
+        >
+          <Descriptions.Item label="数据类型 (Data Type)">
+            {attribute.type}
+          </Descriptions.Item>
+          <Descriptions.Item label="默认值策略 (Default Strategy)">
+            {attribute.defaultValue === undefined || attribute.defaultValue === null
+              ? "未配置 (Not Configured)"
+              : "已配置 (Configured)"}
+          </Descriptions.Item>
+          {attribute.type === "number" ? (
+            <>
+              <Descriptions.Item label="最小值 (Min Value)">
+                {attribute.min ?? "-"}
+              </Descriptions.Item>
+              <Descriptions.Item label="最大值 (Max Value)">
+                {attribute.max ?? "-"}
+              </Descriptions.Item>
+              <Descriptions.Item label="步长 (Step)">
+                {attribute.step ?? "-"}
+              </Descriptions.Item>
+              <Descriptions.Item label="精度 (Precision)">
+                {attribute.precision ?? "-"}
+              </Descriptions.Item>
+            </>
+          ) : null}
+          {attribute.type === "boolean" ? (
+            <>
+              <Descriptions.Item label="True 显示文本 (True Label)">
+                {attribute.trueLabel || "True"}
+              </Descriptions.Item>
+              <Descriptions.Item label="False 显示文本 (False Label)">
+                {attribute.falseLabel || "False"}
+              </Descriptions.Item>
+            </>
+          ) : null}
+          {isEnumType ? (
+            <>
+              <Descriptions.Item label="渲染方式 (Render Type)">
+                {getRenderTypeLabel(attribute.renderType)}
+              </Descriptions.Item>
+              <Descriptions.Item label="可选项数量 (Option Count)">
+                {enumOptions.length}
+              </Descriptions.Item>
+            </>
+          ) : null}
+          {(attribute.type === "string" || attribute.type === "date") ? (
+            <Descriptions.Item label="附加配置 (Additional Config)" span={2}>
+              当前数据类型暂无额外配置。
+            </Descriptions.Item>
+          ) : null}
+        </Descriptions>
+
+        {isEnumType ? (
+          <div
+            style={{
+              marginTop: 12,
+              display: "flex",
+              flexDirection: "column",
+              flex: 1,
+              minHeight: 0,
+              overflow: "hidden",
+            }}
           >
-            {/* {attribute.type === "string" && (
-              <>
-                <Descriptions.Item label="最大长度 (Max Length)">
-                  {attribute.maxLength || "-"}
-                </Descriptions.Item>
-                <Descriptions.Item label="模式 (Pattern)">
-                  {attribute.pattern || "-"}
-                </Descriptions.Item>
-              </>
-            )} */}
-            {attribute.type === "number" && (
-              <>
-                <Descriptions.Item label="最小值 (Min Value)">
-                  {attribute.min ?? "-"}
-                </Descriptions.Item>
-                <Descriptions.Item label="最大值 (Max Value)">
-                  {attribute.max ?? "-"}
-                </Descriptions.Item>
-                <Descriptions.Item label="步长 (Step)">
-                  {attribute.step ?? "-"}
-                </Descriptions.Item>
-                <Descriptions.Item label="精度 (Precision)">
-                  {attribute.precision ?? "-"}
-                </Descriptions.Item>
-              </>
-            )}
-          </Descriptions>
-        </div>
-      )}
+            <Text
+              type="secondary"
+              style={{
+                marginBottom: 8,
+                fontSize: 12,
+              }}
+            >
+              选项内容 (Options)
+            </Text>
+            <div
+              ref={readOnlyEnumTableContainerRef}
+              style={{
+                flex: 1,
+                minHeight: 0,
+                overflow: "hidden",
+                border: `1px solid ${token.colorBorderSecondary}`,
+                borderRadius: token.borderRadiusLG,
+              }}
+            >
+              <Table
+                className="app-ant-table-scroll"
+                size="small"
+                bordered={false}
+                pagination={false}
+                columns={enumTableColumns}
+                dataSource={sortedEnumOptions}
+                rowKey="id"
+                scroll={{ y: readOnlyEnumTableScrollY, x: 760 }}
+                onRow={(record) => ({
+                  style: {
+                    background: defaultValueSet.has(record.value)
+                      ? token.colorPrimaryBg
+                      : token.colorBgContainer,
+                  },
+                })}
+              />
+            </div>
+          </div>
+        ) : null}
+      </div>
     </div>
-  );
+    );
+  };
 
   const renderEditForm = () => (
     <Form

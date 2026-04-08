@@ -76,6 +76,7 @@ const serializeDefaultValueForBackend = (value?: AttributeItem["defaultValue"]) 
   return String(value);
 };
 const normalizeCode = (value?: string | null) => String(value || "").trim();
+const buildLovPreviewPlaceholder = (index: number) => `__DRAFT_ENUM_OPTION_${index + 1}__`;
 const isManualCodeOverride = (value?: string | null, suggestedValue?: string | null) => {
   const normalizedValue = normalizeCode(value);
   if (!normalizedValue) {
@@ -382,6 +383,8 @@ const AttributeDesigner: React.FC<Props> = ({
     return attrDirty || enumDirty;
   }, [currentAttribute, baselineAttribute, enumOptions, baselineEnumOptions]);
 
+  const effectiveHasUnsavedChanges = computedDirty;
+
   useEffect(() => {
     setHasUnsavedChanges(computedDirty);
   }, [computedDirty]);
@@ -408,8 +411,18 @@ const AttributeDesigner: React.FC<Props> = ({
     }
 
     const categoryCode = currentNode?.code;
+    const isNewAttribute = isNewAttributeId(currentAttribute?.id);
+    const enumLike = currentAttribute ? isEnumLikeType(currentAttribute.type) : false;
+    const persistedAttributeCode = currentAttribute ? normalizeCode(currentAttribute.code) : "";
+    const hasExistingEnumRowsNeedingPreview =
+      enumLike &&
+      !isNewAttribute &&
+      enumOptions.some((item) => !normalizeCode(item.code));
+    const canPreviewExistingEnumCodes = Boolean(
+      persistedAttributeCode && hasExistingEnumRowsNeedingPreview,
+    );
 
-    if (!currentAttribute || !categoryCode || !currentBusinessDomain || !isNewAttributeId(currentAttribute.id)) {
+    if (!currentAttribute || !categoryCode || !currentBusinessDomain || (!isNewAttribute && !canPreviewExistingEnumCodes)) {
       setPreviewLoading(false);
       setPreviewWarnings([]);
       setAllowManualCodeOverride(false);
@@ -419,14 +432,25 @@ const AttributeDesigner: React.FC<Props> = ({
 
     const attributeManualOverride = isManualCodeOverride(currentAttribute.code, currentAttribute.suggestedCode);
     const manualCode = attributeManualOverride ? normalizeCode(currentAttribute.code) : "";
-    const enumLike = isEnumLikeType(currentAttribute.type);
+    const previewManualKey = isNewAttribute
+      ? (attributeManualOverride ? manualCode : undefined)
+      : persistedAttributeCode || undefined;
     const previewLovValues: NonNullable<CreateAttributeCodePreviewRequestDto["lovValues"]> = enumLike
       ? enumOptions
-          .map((item) => ({
-            code: isManualCodeOverride(item.code, item.suggestedCode) ? normalizeCode(item.code) || undefined : undefined,
-            name: item.value?.trim() || undefined,
-            label: item.label?.trim() || undefined,
-          }))
+          .map((item, index) => {
+            const manualEnumCode = isManualCodeOverride(item.code, item.suggestedCode)
+              ? normalizeCode(item.code) || undefined
+              : undefined;
+            const normalizedValue = item.value?.trim() || undefined;
+            const normalizedLabel = item.label?.trim() || undefined;
+
+            return {
+              code: manualEnumCode,
+              // 后端仅对 name/label 非空的项生成 preview，因此新增空行需要占位值参与预览。
+              name: normalizedValue || normalizedLabel || buildLovPreviewPlaceholder(index),
+              label: normalizedLabel,
+            };
+          })
           .filter((item) => item.code || item.name || item.label)
       : [];
     const hasPendingManualAttributeCode = attributeManualOverride && !manualCode;
@@ -437,7 +461,7 @@ const AttributeDesigner: React.FC<Props> = ({
         return !!hasContent && isManualCodeOverride(item.code, item.suggestedCode) && !normalizeCode(item.code);
       });
 
-    if (hasPendingManualAttributeCode) {
+    if (isNewAttribute && hasPendingManualAttributeCode) {
       setPreviewLoading(false);
       setPreviewWarnings([]);
       return;
@@ -449,7 +473,7 @@ const AttributeDesigner: React.FC<Props> = ({
 
       try {
         const preview = await metaAttributeApi.previewCreateCode(currentBusinessDomain, categoryCode, {
-          manualKey: attributeManualOverride ? manualCode : undefined,
+          manualKey: previewManualKey,
           dataType: mapAttributeTypeToBackend(currentAttribute.type),
           count: 1,
           lovValues: hasPendingManualEnumCode ? undefined : previewLovValues,
@@ -463,7 +487,7 @@ const AttributeDesigner: React.FC<Props> = ({
         setAllowManualEnumCodeOverride(Boolean(preview.allowLovValueManualOverride));
         setPreviewWarnings([...(preview.warnings || []), ...(preview.lovWarnings || [])]);
 
-        if (!attributeManualOverride) {
+        if (isNewAttribute && !attributeManualOverride) {
           setCurrentAttribute((prev) => {
             if (!prev || prev.id !== currentAttribute.id) {
               return prev;
@@ -489,7 +513,7 @@ const AttributeDesigner: React.FC<Props> = ({
         }
 
         if (!enumLike) {
-          setAllowManualEnumCodeOverride(false);
+        } else if (isNewAttribute && !preview.allowManualOverride) {
           return;
         }
 
@@ -520,7 +544,7 @@ const AttributeDesigner: React.FC<Props> = ({
 
         setPreviewWarnings([e?.message || e?.error || "属性编码预计算失败"]);
 
-        if (!attributeManualOverride) {
+        if (isNewAttribute && !attributeManualOverride) {
           setCurrentAttribute((prev) => {
             if (!prev || prev.id !== currentAttribute.id || !prev.code) {
               return prev;
@@ -554,7 +578,7 @@ const AttributeDesigner: React.FC<Props> = ({
 
   useEffect(() => {
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-      if (!hasUnsavedChanges) return;
+      if (!effectiveHasUnsavedChanges) return;
       event.preventDefault();
       event.returnValue = "";
     };
@@ -563,7 +587,7 @@ const AttributeDesigner: React.FC<Props> = ({
     return () => {
       window.removeEventListener("beforeunload", handleBeforeUnload);
     };
-  }, [hasUnsavedChanges]);
+  }, [effectiveHasUnsavedChanges]);
 
   const handleAttributeUpdate = (key: string, value: any) => {
     if (!currentAttribute) return;
@@ -598,7 +622,7 @@ const AttributeDesigner: React.FC<Props> = ({
   };
 
   const runWithUnsavedChangesGuard = (action: () => void) => {
-    if (!hasUnsavedChanges) {
+    if (!effectiveHasUnsavedChanges) {
       action();
       return;
     }
@@ -636,7 +660,7 @@ const AttributeDesigner: React.FC<Props> = ({
       return;
     }
 
-    if (!hasUnsavedChanges) {
+    if (!effectiveHasUnsavedChanges) {
       applyMultiSelection(normalizedIds, nextPrimary);
       return;
     }
@@ -873,10 +897,10 @@ const AttributeDesigner: React.FC<Props> = ({
 
   useEffect(() => {
     onUnsavedStateChange?.({
-      hasUnsavedChanges,
+      hasUnsavedChanges: effectiveHasUnsavedChanges,
       unsavedNewCount,
     });
-  }, [hasUnsavedChanges, unsavedNewCount, onUnsavedStateChange]);
+  }, [effectiveHasUnsavedChanges, unsavedNewCount, onUnsavedStateChange]);
 
   const handleSaveAll = () => {
     // Optional: Bulk save implementation if backend supports it, otherwise warn user
@@ -889,7 +913,7 @@ const AttributeDesigner: React.FC<Props> = ({
       <Typography.Title level={5} style={{ margin: 0 }}>
         &gt; {currentNode?.title || "未知对象 (Unknown Item)"}
       </Typography.Title>
-      {hasUnsavedChanges && (
+      {effectiveHasUnsavedChanges && (
          <Tag color="warning" variant="filled" style={{ marginLeft: 8 }}>
             未保存 (Unsaved Changes)
          </Tag>
@@ -959,7 +983,7 @@ const AttributeDesigner: React.FC<Props> = ({
             onSave={(attribute) => handleSingleSave(attribute, { saveAndNext: false })}
             onSaveAndNext={(attribute) => handleSingleSave(attribute, { saveAndNext: true })}
             showSaveAndNext={hasNextUnsavedNew}
-            hasUnsavedChanges={hasUnsavedChanges}
+            hasUnsavedChanges={effectiveHasUnsavedChanges}
             onDiscard={(id) => {
               setDataSource((prev) => prev.filter((item) => item.id !== id));
               if (selectedAttributeId === id) {

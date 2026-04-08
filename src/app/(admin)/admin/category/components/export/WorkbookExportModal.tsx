@@ -621,7 +621,7 @@ const WorkbookExportModal: React.FC<WorkbookExportModalProps> = ({
         <div style={{ background: token.colorFillAlter, borderRadius: token.borderRadiusLG, padding: 12 }}>
           <Text style={{ fontSize: 13, display: 'block', marginBottom: 8 }}>路径分隔符</Text>
           <Select
-            size="small"
+            size="middle"
             style={{ width: '100%' }}
             value={config.pathSeparator}
             options={[
@@ -637,7 +637,7 @@ const WorkbookExportModal: React.FC<WorkbookExportModalProps> = ({
         <div style={{ background: token.colorFillAlter, borderRadius: token.borderRadiusLG, padding: 12 }}>
           <Text style={{ fontSize: 13, display: 'block', marginBottom: 8 }}>目标格式</Text>
           <Select
-            size="small"
+            size="middle"
             style={{ width: '100%' }}
             value={config.fileFormat}
             options={[
@@ -725,10 +725,10 @@ const WorkbookExportModal: React.FC<WorkbookExportModalProps> = ({
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               <Flex align="center" justify="space-between" gap={8}>
                 <Text style={{ fontSize: 12, color: token.colorTextSecondary }}>方案</Text>
-                <Button size="small" onClick={handleSaveAsProfile}>另存</Button>
+                <Button size="middle" onClick={handleSaveAsProfile}>另存</Button>
               </Flex>
               <Select
-                size="small"
+                size="middle"
                 style={{ width: '100%' }}
                 value={activeProfileId}
                 onChange={handleProfileChange}
@@ -746,7 +746,7 @@ const WorkbookExportModal: React.FC<WorkbookExportModalProps> = ({
               </Flex>
               {availableFields.length > 0 ? (
                 <Select
-                  size="small"
+                  size="middle"
                   placeholder="添加字段..."
                   style={{ width: '100%' }}
                   value={null}

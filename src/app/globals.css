@@ -208,6 +208,49 @@ body[data-theme='dark'] a:hover {
   height: 0;
 }
 
+.app-ant-table-scroll,
+.app-ant-table-scroll .ant-spin-nested-loading,
+.app-ant-table-scroll .ant-spin-container {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-ant-table-scroll .ant-table,
+.app-ant-table-scroll .ant-table-container,
+.app-ant-table-scroll .ant-table-content {
+  height: 100%;
+  min-height: 0;
+}
+
+.app-ant-table-scroll .ant-table-body {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb, rgba(160, 169, 185, 0.38)) transparent;
+}
+
+.app-ant-table-scroll .ant-table-body::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.app-ant-table-scroll .ant-table-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.app-ant-table-scroll .ant-table-body::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb, rgba(160, 169, 185, 0.38));
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+}
+
+.app-ant-table-scroll .ant-table-body::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover, #0f62fe);
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+
 .ant-menu,
 .ant-menu-sub,
 .ant-menu-submenu-popup,
