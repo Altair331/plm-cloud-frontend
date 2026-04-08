@@ -26,6 +26,7 @@ import {
   Tabs,
   Upload,
   Image,
+  Slider,
 } from "antd";
 import type { MenuProps } from "antd";
 import {
@@ -86,6 +87,110 @@ const { Option } = Select;
 const { Text, Title } = Typography;
 const { Panel } = Collapse;
 
+const isEmptyDefaultValue = (value: AttributeItem["defaultValue"]) =>
+  value === undefined || value === null || (Array.isArray(value) && value.length === 0);
+
+const normalizeNumericDefaultValue = (value: AttributeItem["defaultValue"]) => {
+  if (value === undefined || value === null || value === "") {
+    return undefined;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+};
+
+const normalizeBooleanDefaultValue = (value: AttributeItem["defaultValue"]) => {
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (value === undefined || value === null || value === "") {
+    return undefined;
+  }
+
+  const normalized = String(value).trim().toLowerCase();
+  if (normalized === "true") {
+    return true;
+  }
+  if (normalized === "false") {
+    return false;
+  }
+  return undefined;
+};
+
+const normalizeMultiEnumDefaultValue = (value: AttributeItem["defaultValue"]) => {
+  if (Array.isArray(value)) {
+    return value;
+  }
+  if (value === undefined || value === null || value === "") {
+    return [];
+  }
+
+  return String(value)
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+};
+
+const getBooleanDisplayLabel = (attribute: AttributeItem, value: boolean) => {
+  if (value) {
+    return attribute.trueLabel?.trim() || "True";
+  }
+  return attribute.falseLabel?.trim() || "False";
+};
+
+const formatDefaultValueForDisplay = (
+  attribute: AttributeItem,
+  enumOptions: EnumOptionItem[],
+) => {
+  if (isEmptyDefaultValue(attribute.defaultValue)) {
+    return "-";
+  }
+
+  if (attribute.type === "boolean") {
+    const normalized = normalizeBooleanDefaultValue(attribute.defaultValue);
+    return normalized === undefined ? "-" : getBooleanDisplayLabel(attribute, normalized);
+  }
+
+  if (attribute.type === "multi-enum") {
+    return normalizeMultiEnumDefaultValue(attribute.defaultValue)
+      .map((item) => enumOptions.find((option) => option.value === item)?.label || item)
+      .join(", ");
+  }
+
+  if (attribute.type === "enum") {
+    const rawValue = String(attribute.defaultValue);
+    return enumOptions.find((option) => option.value === rawValue)?.label || rawValue;
+  }
+
+  return String(attribute.defaultValue);
+};
+
+const normalizeDefaultValueForType = (
+  type: AttributeType,
+  value: AttributeItem["defaultValue"],
+) => {
+  if (type === "boolean") {
+    return normalizeBooleanDefaultValue(value);
+  }
+  if (type === "number") {
+    return normalizeNumericDefaultValue(value);
+  }
+  if (type === "multi-enum") {
+    const normalized = normalizeMultiEnumDefaultValue(value);
+    return normalized.length > 0 ? normalized : undefined;
+  }
+  if (type === "enum") {
+    if (Array.isArray(value)) {
+      return value[0] || undefined;
+    }
+    return value === undefined || value === null || value === "" ? undefined : String(value);
+  }
+  if (Array.isArray(value)) {
+    return value[0] || undefined;
+  }
+  return value === undefined || value === null || value === "" ? undefined : String(value);
+};
+
 const AttributeWorkspace: React.FC<AttributeWorkspaceProps> = ({
   attribute,
   selectedCount = 0,
@@ -107,6 +212,7 @@ const AttributeWorkspace: React.FC<AttributeWorkspaceProps> = ({
   const { modal } = App.useApp();
   const [form] = Form.useForm();
   const [isEditing, setIsEditing] = useState(false);
+  const [numericDefaultSliderOpen, setNumericDefaultSliderOpen] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "loading" | "success">("idle");
   const gridRef = useRef<AgGridReact>(null);
 
@@ -314,6 +420,7 @@ const AttributeWorkspace: React.FC<AttributeWorkspaceProps> = ({
   useEffect(() => {
     if (!attribute) {
       prevAttributeIdRef.current = undefined;
+      form.resetFields();
       setIsEditing(false);
       setSaveStatus("idle");
       return;
@@ -322,6 +429,8 @@ const AttributeWorkspace: React.FC<AttributeWorkspaceProps> = ({
     if (attribute.id !== prevAttributeIdRef.current) {
       // Attribute selection changed: switch editing mode by attribute type
       const isNew = attribute.id.startsWith("new_attr_");
+      form.resetFields();
+      form.setFieldsValue(attribute);
       setIsEditing(isNew);
       setSaveStatus("idle");
       prevAttributeIdRef.current = attribute.id;
@@ -339,6 +448,10 @@ const AttributeWorkspace: React.FC<AttributeWorkspaceProps> = ({
     if (!isEditing || !attribute) return;
     form.setFieldsValue(attribute);
   }, [isEditing, attribute, form]);
+
+  useEffect(() => {
+    setNumericDefaultSliderOpen(false);
+  }, [attribute?.id, attribute?.type]);
 
   /* Removed conflicting useEffects */
 
@@ -388,6 +501,19 @@ const AttributeWorkspace: React.FC<AttributeWorkspaceProps> = ({
   }
 
   const handleFormChange = (changedValues: any) => {
+    if (attribute && "type" in changedValues) {
+      const nextType = changedValues.type as AttributeType;
+      const nextDefaultValue = normalizeDefaultValueForType(
+        nextType,
+        attribute.defaultValue,
+      );
+
+      onUpdate("type", nextType);
+      onUpdate("defaultValue", nextDefaultValue);
+      form.setFieldValue("defaultValue", nextDefaultValue);
+      return;
+    }
+
     Object.keys(changedValues).forEach((key) => {
       onUpdate(key, changedValues[key]);
     });
@@ -553,17 +679,7 @@ const AttributeWorkspace: React.FC<AttributeWorkspaceProps> = ({
           {attribute.code}
         </Descriptions.Item>
         <Descriptions.Item label="默认值 (Default)">
-          {isListMode && attribute.defaultValue
-            ? (Array.isArray(attribute.defaultValue)
-                ? attribute.defaultValue
-                : [attribute.defaultValue]
-              )
-                .map(
-                  (val: any) =>
-                    enumOptions.find((o) => o.value === val)?.label || val,
-                )
-                .join(", ")
-            : attribute.defaultValue || "-"}
+          {formatDefaultValueForDisplay(attribute, enumOptions)}
         </Descriptions.Item>
         <Descriptions.Item label="单位 (Unit)">
           {attribute.unit || "-"}
@@ -616,16 +732,18 @@ const AttributeWorkspace: React.FC<AttributeWorkspaceProps> = ({
             )} */}
             {attribute.type === "number" && (
               <>
-                <Descriptions.Item label="模式 (Mode)">
-                  {attribute.constraintMode}
+                <Descriptions.Item label="最小值 (Min Value)">
+                  {attribute.min ?? "-"}
                 </Descriptions.Item>
-                {attribute.constraintMode === "range" ? (
-                  <Descriptions.Item label="范围 (Range)">{`[${attribute.rangeConfig?.min}, ${attribute.rangeConfig?.max}]`}</Descriptions.Item>
-                ) : (
-                  <Descriptions.Item label="精度 (Precision)">
-                    {attribute.precision}
-                  </Descriptions.Item>
-                )}
+                <Descriptions.Item label="最大值 (Max Value)">
+                  {attribute.max ?? "-"}
+                </Descriptions.Item>
+                <Descriptions.Item label="步长 (Step)">
+                  {attribute.step ?? "-"}
+                </Descriptions.Item>
+                <Descriptions.Item label="精度 (Precision)">
+                  {attribute.precision ?? "-"}
+                </Descriptions.Item>
               </>
             )}
           </Descriptions>
@@ -732,11 +850,114 @@ const AttributeWorkspace: React.FC<AttributeWorkspaceProps> = ({
                       </Form.Item>
                     </Col>
                     <Col xs={24} sm={12} md={12} lg={6} xl={7}>
-                      <Form.Item
-                        label="默认值 (Default Value)"
-                        name="defaultValue"
-                      >
-                        {isListMode ? (
+                      <Form.Item label="默认值 (Default Value)">
+                        {attribute.type === "boolean" ? (
+                          <Select
+                            placeholder="选择默认值 (Select default)"
+                            allowClear
+                            size="middle"
+                            value={normalizeBooleanDefaultValue(attribute.defaultValue)}
+                            onChange={(value) => {
+                              onUpdate("defaultValue", value);
+                              form.setFieldValue("defaultValue", value);
+                            }}
+                            onClear={() => {
+                              onUpdate("defaultValue", undefined);
+                              form.setFieldValue("defaultValue", undefined);
+                            }}
+                            options={[
+                              {
+                                label: getBooleanDisplayLabel(attribute, true),
+                                value: true,
+                              },
+                              {
+                                label: getBooleanDisplayLabel(attribute, false),
+                                value: false,
+                              },
+                            ]}
+                          />
+                        ) : attribute.type === "number" ? (
+                          <Flex
+                            vertical
+                            gap={8}
+                            onMouseLeave={() => {
+                              setNumericDefaultSliderOpen(false);
+                            }}
+                          >
+                            <InputNumber
+                              style={{ width: "100%" }}
+                              size="middle"
+                              min={attribute.min}
+                              max={attribute.max}
+                              step={typeof attribute.step === "number" && attribute.step > 0 ? attribute.step : 1}
+                              precision={attribute.precision}
+                              placeholder="输入默认值 (Enter default)"
+                              value={normalizeNumericDefaultValue(attribute.defaultValue)}
+                              onFocus={() => {
+                                if (
+                                  typeof attribute.min === "number" &&
+                                  typeof attribute.max === "number" &&
+                                  attribute.max > attribute.min
+                                ) {
+                                  setNumericDefaultSliderOpen(true);
+                                }
+                              }}
+                              onClick={() => {
+                                if (
+                                  typeof attribute.min === "number" &&
+                                  typeof attribute.max === "number" &&
+                                  attribute.max > attribute.min
+                                ) {
+                                  setNumericDefaultSliderOpen(true);
+                                }
+                              }}
+                              onChange={(value) => {
+                                const nextValue = value === null ? undefined : value;
+                                onUpdate("defaultValue", nextValue);
+                                form.setFieldValue("defaultValue", nextValue);
+                              }}
+                            />
+                            {numericDefaultSliderOpen &&
+                            typeof attribute.min === "number" &&
+                            typeof attribute.max === "number" &&
+                            attribute.max > attribute.min ? (
+                              <div
+                                style={{
+                                  padding: 12,
+                                  borderRadius: token.borderRadiusLG,
+                                  border: `1px solid ${token.colorBorderSecondary}`,
+                                  background: token.colorFillQuaternary,
+                                }}
+                              >
+                                <Slider
+                                  min={attribute.min}
+                                  max={attribute.max}
+                                  step={typeof attribute.step === "number" && attribute.step > 0 ? attribute.step : 1}
+                                  value={normalizeNumericDefaultValue(attribute.defaultValue)}
+                                  onChange={(value) => {
+                                    const nextValue = Array.isArray(value) ? value[0] : value;
+                                    onUpdate("defaultValue", nextValue);
+                                    form.setFieldValue("defaultValue", nextValue);
+                                  }}
+                                  tooltip={{ open: false }}
+                                />
+                                <Flex justify="space-between" align="center">
+                                  <Text type="secondary" style={{ fontSize: 12 }}>
+                                    {attribute.min} ~ {attribute.max}
+                                  </Text>
+                                  <Text type="secondary" style={{ fontSize: 12 }}>
+                                    步长 {typeof attribute.step === "number" && attribute.step > 0 ? attribute.step : 1}
+                                  </Text>
+                                </Flex>
+                              </div>
+                            ) : null}
+                            <Text type="secondary" style={{ fontSize: 12 }}>
+                              {typeof attribute.min === "number" && typeof attribute.max === "number"
+                                ? "点击输入框可展开滑块，选定数值后会自动收起。"
+                                : "设置最小值和最大值后，可在此处用滑块快速选择默认值。"}
+                            </Text>
+                          </Flex>
+                        ) : isListMode ? (
                           <Select
                             placeholder="选择默认值 (Select default)"
                             allowClear
@@ -747,6 +968,23 @@ const AttributeWorkspace: React.FC<AttributeWorkspaceProps> = ({
                             }
                             size="middle"
                             optionLabelProp="label"
+                            value={
+                              attribute.type === "multi-enum"
+                                ? normalizeMultiEnumDefaultValue(attribute.defaultValue)
+                                : normalizeDefaultValueForType(attribute.type, attribute.defaultValue)
+                            }
+                            onChange={(value) => {
+                              const nextValue = attribute.type === "multi-enum"
+                                ? (Array.isArray(value) ? value : [])
+                                : value;
+                              onUpdate("defaultValue", nextValue);
+                              form.setFieldValue("defaultValue", nextValue);
+                            }}
+                            onClear={() => {
+                              const nextValue = attribute.type === "multi-enum" ? [] : undefined;
+                              onUpdate("defaultValue", nextValue);
+                              form.setFieldValue("defaultValue", nextValue);
+                            }}
                           >
                             {enumOptions.map((opt) => (
                               <Option
@@ -776,7 +1014,20 @@ const AttributeWorkspace: React.FC<AttributeWorkspaceProps> = ({
                             ))}
                           </Select>
                         ) : (
-                          <Input placeholder="-" size="middle" />
+                          <Input
+                            placeholder="-"
+                            size="middle"
+                            value={
+                              attribute.defaultValue === undefined || attribute.defaultValue === null
+                                ? undefined
+                                : String(attribute.defaultValue)
+                            }
+                            onChange={(event) => {
+                              const nextValue = event.target.value || undefined;
+                              onUpdate("defaultValue", nextValue);
+                              form.setFieldValue("defaultValue", nextValue);
+                            }}
+                          />
                         )}
                       </Form.Item>
                     </Col>
@@ -999,14 +1250,14 @@ const AttributeWorkspace: React.FC<AttributeWorkspaceProps> = ({
     if (attribute.type === "number") {
       return renderCommonHelper(
         "数值规则 (Numeric Rules)",
-        <Form layout="vertical" size="small">
+        <Form layout="vertical" size="middle">
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item label="最小值 (Min Value)">
                 <InputNumber
                   style={{ width: "100%" }}
                   value={attribute.min}
-                  onChange={(v) => updateAttribute({ min: v || undefined })}
+                  onChange={(value) => updateAttribute({ min: value ?? undefined })}
                 />
               </Form.Item>
             </Col>
@@ -1015,7 +1266,7 @@ const AttributeWorkspace: React.FC<AttributeWorkspaceProps> = ({
                 <InputNumber
                   style={{ width: "100%" }}
                   value={attribute.max}
-                  onChange={(v) => updateAttribute({ max: v || undefined })}
+                  onChange={(value) => updateAttribute({ max: value ?? undefined })}
                 />
               </Form.Item>
             </Col>
@@ -1027,7 +1278,7 @@ const AttributeWorkspace: React.FC<AttributeWorkspaceProps> = ({
                   style={{ width: "100%" }}
                   min={0}
                   value={attribute.step}
-                  onChange={(v) => updateAttribute({ step: v || undefined })}
+                  onChange={(value) => updateAttribute({ step: value ?? undefined })}
                 />
               </Form.Item>
             </Col>
@@ -1038,21 +1289,14 @@ const AttributeWorkspace: React.FC<AttributeWorkspaceProps> = ({
                   min={0}
                   max={10}
                   value={attribute.precision}
-                  onChange={(v) =>
-                    updateAttribute({ precision: v || undefined })
+                  onChange={(value) =>
+                    updateAttribute({ precision: value ?? undefined })
                   }
                 />
               </Form.Item>
             </Col>
           </Row>
         </Form>,
-        <Button
-          size="small"
-          type="link"
-          onClick={() => handleTypeChange("enum")}
-        >
-          转为枚举 (Convert to Enum)
-        </Button>
       );
     }
 

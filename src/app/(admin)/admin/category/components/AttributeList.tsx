@@ -49,7 +49,7 @@ interface AttributeListProps {
 
 const { Text } = Typography;
 // ... existing getTypeIcon code ...
-const getTypeIcon = (type: AttributeType) => {
+const getTypeIcon = (type: AttributeType | string) => {
   switch (type) {
     case "string":
       return <FontColorsOutlined style={{ color: "#1890ff" }} />;
@@ -62,13 +62,14 @@ const getTypeIcon = (type: AttributeType) => {
     case "enum":
       return <UnorderedListOutlined style={{ color: "#13c2c2" }} />;
     case "multi-enum":
+    case "multi_enum":
       return <UnorderedListOutlined style={{ color: "#13c2c2" }} />;
     default:
       return <FontColorsOutlined />;
   }
 };
 
-const getTypeLabel = (type: AttributeType) => {
+const getTypeLabel = (type: AttributeType | string) => {
   switch (type) {
     case "string":
       return "文本型";
@@ -81,6 +82,7 @@ const getTypeLabel = (type: AttributeType) => {
     case "enum":
       return "枚举型（单选）";
     case "multi-enum":
+    case "multi_enum":
       return "枚举型（多选）";
     default:
       return type;
@@ -104,13 +106,13 @@ type AttributeColumnShareMap = Record<AttributeColumnKey, number>;
 const ATTRIBUTE_MIN_COLUMN_SHARE: AttributeColumnShareMap = {
   name: 30,
   attributeField: 30,
-  type: 22,
+  type: 30,
 };
 
 const ATTRIBUTE_DEFAULT_COLUMN_SHARES: AttributeColumnShareMap = {
-  name: 38,
-  attributeField: 34,
-  type: 28,
+  name: 35,
+  attributeField: 35,
+  type: 35,
 };
 
 interface ResizableHeaderCellProps extends React.ThHTMLAttributes<HTMLTableCellElement> {
@@ -582,18 +584,23 @@ const AttributeList: React.FC<AttributeListProps> = ({
         minShare: ATTRIBUTE_MIN_COLUMN_SHARE.name,
         onResize: (share: number) => handleColumnResize('name', share),
       }),
-      render: (value: string) => (
-        <Text
-          strong
-          style={{ fontSize: 14, minWidth: 0, textAlign: 'center', display: 'block' }}
-          ellipsis={{ tooltip: value || '未命名属性' }}
-        >
-          {value || (
-            <span style={{ color: token.colorTextQuaternary, fontStyle: 'italic' }}>
-              未命名属性
-            </span>
-          )}
-        </Text>
+      render: (value: string, record: AttributeTableRow) => (
+        <div className="attribute-list-name-cell">
+          <Text
+            strong
+            className="attribute-list-name-text"
+            ellipsis={{ tooltip: value || '未命名属性' }}
+          >
+            {value || (
+              <span style={{ color: token.colorTextQuaternary, fontStyle: 'italic' }}>
+                未命名属性
+              </span>
+            )}
+          </Text>
+          {record.id.startsWith('new_attr_') ? (
+            <span className="attribute-list-draft-badge">草稿</span>
+          ) : null}
+        </div>
       ),
     },
     {
@@ -629,56 +636,39 @@ const AttributeList: React.FC<AttributeListProps> = ({
         minShare: ATTRIBUTE_MIN_COLUMN_SHARE.type,
         onResize: (share: number) => handleColumnResize('type', share),
       }),
-      render: (value: AttributeType, record) => (
+      render: (value: AttributeType) => (
         <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 8,
-            minWidth: 0,
-          }}
+          className="attribute-list-type-cell"
+          title={getTypeLabel(value)}
         >
-          <span
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 4,
-              whiteSpace: 'nowrap',
-              minWidth: 0,
-              flex: 1,
-            }}
-            title={value}
+          <span className="attribute-list-type-icon">{getTypeIcon(value)}</span>
+          <span className="attribute-list-type-label">{getTypeLabel(value)}</span>
+        </div>
+      ),
+    },
+    {
+      title: '',
+      key: 'actions',
+      width: ACTION_COL_RESERVED_WIDTH,
+      align: 'center' as const,
+      className: 'attribute-list-action-column',
+      onHeaderCell: () => ({
+        className: 'attribute-list-action-column attribute-list-action-column--head',
+      }),
+      render: (_: unknown, record: AttributeTableRow) => (
+        <div className="attribute-list-action-cell">
+          <Dropdown
+            key={`more-${record.id}`}
+            menu={{ items: getMenuItems(record) }}
+            trigger={["click"]}
           >
-            {getTypeIcon(value)}
-            <span style={{ fontSize: 12 }}>{getTypeLabel(value)}</span>
-          </span>
-          <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, flexShrink: 0 }}>
-            {record.required ? (
-              <div
-                style={{
-                  width: 6,
-                  height: 6,
-                  borderRadius: '50%',
-                  background: token.colorError,
-                }}
-                title="必填"
-              />
-            ) : null}
-            <Dropdown
-              key={`more-${record.id}`}
-              menu={{ items: getMenuItems(record) }}
-              trigger={["click"]}
-            >
-              <Button
-                type="text"
-                size="small"
-                icon={<MoreOutlined style={{ color: token.colorTextQuaternary }} />}
-                onClick={(event) => event.stopPropagation()}
-              />
-            </Dropdown>
-          </div>
+            <Button
+              type="text"
+              size="small"
+              icon={<MoreOutlined style={{ color: token.colorTextQuaternary }} />}
+              onClick={(event) => event.stopPropagation()}
+            />
+          </Dropdown>
         </div>
       ),
     },
@@ -693,7 +683,6 @@ const AttributeList: React.FC<AttributeListProps> = ({
     handleSelectAll,
     selectedRowKeys,
     tableData.length,
-    token.colorError,
     token.colorTextQuaternary,
   ]);
 
@@ -956,6 +945,77 @@ const AttributeList: React.FC<AttributeListProps> = ({
         }
         .attribute-list-table .ant-table-tbody > tr.attribute-list-row-active > td:first-child {
           box-shadow: inset 4px 0 0 ${token.colorPrimary};
+        }
+        .attribute-list-name-cell {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          min-width: 0;
+          max-width: 100%;
+        }
+        .attribute-list-name-text {
+          min-width: 0;
+          max-width: 100%;
+          text-align: center;
+          display: block;
+          font-size: 14px;
+        }
+        .attribute-list-draft-badge {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          height: 20px;
+          padding: 0 6px;
+          border-radius: 999px;
+          background: ${token.colorWarningBg};
+          border: 1px solid ${token.colorWarningBorder};
+          color: ${token.colorWarning};
+          font-size: 11px;
+          line-height: 1;
+          font-weight: 600;
+          flex: 0 0 auto;
+        }
+        .attribute-list-type-cell {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 6px;
+          min-width: 0;
+          max-width: 100%;
+        }
+        .attribute-list-type-icon {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          flex: 0 0 auto;
+        }
+        .attribute-list-type-label {
+          min-width: 0;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          font-size: 12px;
+        }
+        .attribute-list-action-column {
+          padding-left: 4px !important;
+          padding-right: 4px !important;
+        }
+        .attribute-list-action-column--head {
+          color: transparent;
+        }
+        .attribute-list-action-cell {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 100%;
+        }
+        .attribute-list-action-cell .ant-btn {
+          width: 24px;
+          min-width: 24px;
+          height: 24px;
+          padding: 0;
+          border-radius: 999px;
         }
         .attribute-list-resize-handle {
           position: absolute;

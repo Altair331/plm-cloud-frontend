@@ -176,6 +176,18 @@ const WorkbookExportModal: React.FC<WorkbookExportModalProps> = ({
     return currentModuleConfig.columns.filter((column) => column.enabled);
   }, [currentModuleConfig.columns]);
 
+  const activeModuleMeta = useMemo(() => {
+    return WORKBOOK_EXPORT_MODULES.find((module) => module.key === activeModule) || WORKBOOK_EXPORT_MODULES[0];
+  }, [activeModule]);
+
+  const segmentedOptions = useMemo(() => {
+    return WORKBOOK_EXPORT_MODULES.map((module) => ({
+      value: module.key,
+      label: `${module.label} ${moduleCounts[module.key]}`,
+      disabled: !config.modules[module.key].enabled,
+    }));
+  }, [config.modules, moduleCounts]);
+
   const previewRows = useMemo(() => {
     return getWorkbookModuleRows(activeModule, scopeData, currentModuleConfig.columns, config.pathSeparator).slice(0, 10);
   }, [activeModule, config.pathSeparator, currentModuleConfig.columns, scopeData]);
@@ -685,52 +697,96 @@ const WorkbookExportModal: React.FC<WorkbookExportModalProps> = ({
     <Splitter style={{ height: '100%' }}>
       <Splitter.Panel defaultSize="25%" min="20%" style={{ overflow: 'hidden' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, height: '100%', paddingRight: 12 }}>
-          <Flex align="center" gap={8} wrap>
-            <Text style={{ fontSize: 13, whiteSpace: 'nowrap' }}>方案：</Text>
-            <Select
-              size="small"
-              style={{ width: 180 }}
-              value={activeProfileId}
-              onChange={handleProfileChange}
-              options={profiles.map((profile) => ({
-                value: profile.id,
-                label: profile.name,
-              }))}
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 10,
+              padding: 12,
+              border: `1px solid ${token.colorBorderSecondary}`,
+              borderRadius: token.borderRadiusLG,
+              background: token.colorFillQuaternary,
+            }}
+          >
+            <div>
+              <Text strong style={{ fontSize: 13, display: 'block' }}>数据块</Text>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                先切换当前工作表，再配置字段和预览
+              </Text>
+            </div>
+
+            <Segmented<WorkbookExportModuleKey>
+              block
+              value={activeModule}
+              onChange={(value) => setActiveModule(value)}
+              options={segmentedOptions}
             />
-            <Button size="small" onClick={handleSaveAsProfile}>另存</Button>
-          </Flex>
 
-          <Segmented<WorkbookExportModuleKey>
-            block
-            value={activeModule}
-            onChange={(value) => setActiveModule(value)}
-            options={WORKBOOK_EXPORT_MODULES.map((module) => ({
-              value: module.key,
-              label: `${module.label} ${moduleCounts[module.key]}`,
-              disabled: !config.modules[module.key].enabled,
-            }))}
-          />
-
-          <Flex align="center" gap={8} wrap>
-            <Text type="secondary" style={{ fontSize: 12 }}>当前数据块字段：</Text>
-            {availableFields.length > 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <Flex align="center" justify="space-between" gap={8}>
+                <Text style={{ fontSize: 12, color: token.colorTextSecondary }}>方案</Text>
+                <Button size="small" onClick={handleSaveAsProfile}>另存</Button>
+              </Flex>
               <Select
                 size="small"
-                placeholder="添加字段..."
-                style={{ width: 160 }}
-                value={null}
-                onChange={handleAddField}
-                options={availableFields.map((field) => ({ value: field.field, label: field.label }))}
+                style={{ width: '100%' }}
+                value={activeProfileId}
+                onChange={handleProfileChange}
+                options={profiles.map((profile) => ({
+                  value: profile.id,
+                  label: profile.name,
+                }))}
               />
-            ) : (
-              <Text type="secondary" style={{ fontSize: 12 }}>已包含全部可选字段</Text>
-            )}
-          </Flex>
+            </div>
 
-          <Flex align="center" gap={6} style={{ color: token.colorTextSecondary, fontSize: 12 }}>
-            <InfoCircleOutlined />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <Flex align="center" justify="space-between" gap={8}>
+                <Text style={{ fontSize: 12, color: token.colorTextSecondary }}>字段</Text>
+                <Text type="secondary" style={{ fontSize: 12 }}>已启用 {enabledColumns.length} 个</Text>
+              </Flex>
+              {availableFields.length > 0 ? (
+                <Select
+                  size="small"
+                  placeholder="添加字段..."
+                  style={{ width: '100%' }}
+                  value={null}
+                  onChange={handleAddField}
+                  options={availableFields.map((field) => ({ value: field.field, label: field.label }))}
+                />
+              ) : (
+                <div
+                  style={{
+                    minHeight: 32,
+                    display: 'flex',
+                    alignItems: 'center',
+                    padding: '0 11px',
+                    borderRadius: token.borderRadius,
+                    border: `1px dashed ${token.colorBorderSecondary}`,
+                    background: token.colorBgContainer,
+                  }}
+                >
+                  <Text type="secondary" style={{ fontSize: 12 }}>已包含全部可选字段</Text>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: 6,
+              padding: '8px 10px',
+              borderRadius: token.borderRadius,
+              background: token.colorInfoBg,
+              border: `1px solid ${token.colorInfoBorder}`,
+              color: token.colorTextSecondary,
+              fontSize: 12,
+            }}
+          >
+            <InfoCircleOutlined style={{ marginTop: 2 }} />
             <span>单击“导出表头”列即可编辑，右侧预览将按当前数据块实时更新</span>
-          </Flex>
+          </div>
 
           <div className="workbook-export-mapping-grid" style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
             <AgGridReact<ExportColumnMapping>

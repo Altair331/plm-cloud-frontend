@@ -25,6 +25,56 @@ import dayjs from "dayjs";
 const isNewAttributeId = (id?: string | null) => !!id && id.startsWith("new_attr_");
 const isEnumLikeType = (type?: string | null) => type === "enum" || type === "multi-enum";
 const mapAttributeTypeToBackend = (type?: string | null) => (type === "boolean" ? "bool" : type) as any;
+const normalizeAttributeTypeFromBackend = (type?: string | null) => {
+  if (type === 'bool') {
+    return 'boolean';
+  }
+  if (type === 'multi_enum') {
+    return 'multi-enum';
+  }
+  return type;
+};
+const normalizeDefaultValueFromBackend = (type?: string | null, value?: string | null) => {
+  if (value === undefined || value === null || value === "") {
+    return undefined;
+  }
+
+  if (type === "boolean") {
+    const normalized = String(value).trim().toLowerCase();
+    if (normalized === "true") {
+      return true;
+    }
+    if (normalized === "false") {
+      return false;
+    }
+    return undefined;
+  }
+
+  if (type === "number") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+
+  if (type === "multi-enum") {
+    return String(value)
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  return value;
+};
+const serializeDefaultValueForBackend = (value?: AttributeItem["defaultValue"]) => {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+
+  if (Array.isArray(value)) {
+    return value.length > 0 ? value.join(",") : undefined;
+  }
+
+  return String(value);
+};
 const normalizeCode = (value?: string | null) => String(value || "").trim();
 const isManualCodeOverride = (value?: string | null, suggestedValue?: string | null) => {
   const normalizedValue = normalizeCode(value);
@@ -37,9 +87,11 @@ const isManualCodeOverride = (value?: string | null, suggestedValue?: string | n
 
 const normalizeAttributeForCompare = (attribute: AttributeItem | null) => {
   if (!attribute) return null;
+  const ignoreGeneratedDraftCode =
+    isNewAttributeId(attribute.id) && !isManualCodeOverride(attribute.code, attribute.suggestedCode);
   return {
     id: attribute.id,
-    code: attribute.code,
+    code: ignoreGeneratedDraftCode ? "" : attribute.code,
     name: attribute.name,
     attributeField: attribute.attributeField || "",
     type: attribute.type,
@@ -70,6 +122,34 @@ const normalizeEnumOptionsForCompare = (options: EnumOptionItem[]) =>
     image: item.image || "",
     order: item.order ?? 0,
   }));
+
+const createEmptyAttributeDraft = (id: string): AttributeItem => ({
+  id,
+  code: "",
+  suggestedCode: "",
+  freezeKey: false,
+  name: "",
+  attributeField: "",
+  type: "enum",
+  unit: "",
+  required: false,
+  description: "",
+  defaultValue: undefined,
+  hidden: false,
+  readonly: false,
+  searchable: false,
+  unique: false,
+  min: undefined,
+  max: undefined,
+  step: undefined,
+  precision: undefined,
+  trueLabel: "",
+  falseLabel: "",
+  constraintMode: 'none',
+  renderType: 'text',
+  version: 1,
+  isLatest: true,
+});
 
 interface Props {
   currentNode?: { title?: string; code?: string; [key: string]: any };
@@ -110,13 +190,16 @@ const AttributeDesigner: React.FC<Props> = ({
   const currentBusinessDomain = String(currentNode?.businessDomain || "").trim();
 
   // Helper: Map Backend DTO List Item to Frontend AttributeItem
-  const mapListItemToAttributeItem = (dto: MetaAttributeDefListItemDto): AttributeItem => ({
+  const mapListItemToAttributeItem = (dto: MetaAttributeDefListItemDto): AttributeItem => {
+    const normalizedType = normalizeAttributeTypeFromBackend(dto.dataType) as AttributeItem["type"];
+
+    return {
     id: dto.key,
     code: dto.key,
     suggestedCode: dto.key,
     name: dto.displayName,
     attributeField: dto.attributeField || undefined,
-    type: (dto.dataType === 'bool' ? 'boolean' : dto.dataType) as any,
+    type: normalizedType,
     unit: dto.unit || undefined,
     version: dto.latestVersionNo,
     isLatest: true,
@@ -126,18 +209,22 @@ const AttributeDesigner: React.FC<Props> = ({
     hidden: dto.hidden,
     readonly: dto.readOnly,
     searchable: dto.searchable,
-  });
+    };
+  };
 
    // Helper: Map Backend Detail DTO to Frontend AttributeItem
-   const mapDetailToAttributeItem = (dto: MetaAttributeDefDetailDto): AttributeItem => ({
+   const mapDetailToAttributeItem = (dto: MetaAttributeDefDetailDto): AttributeItem => {
+    const normalizedType = normalizeAttributeTypeFromBackend(dto.latestVersion.dataType) as AttributeItem["type"];
+
+    return {
     id: dto.key,
     code: dto.key,
     suggestedCode: dto.key,
     name: dto.latestVersion.displayName,
       attributeField: dto.latestVersion.attributeField || undefined,
-    type: (dto.latestVersion.dataType === 'bool' ? 'boolean' : dto.latestVersion.dataType) as any,
+    type: normalizedType,
     unit: dto.latestVersion.unit || undefined,
-    defaultValue: dto.latestVersion.defaultValue || undefined,
+    defaultValue: normalizeDefaultValueFromBackend(normalizedType, dto.latestVersion.defaultValue),
     required: dto.latestVersion.required,
     unique: dto.latestVersion.unique,
     hidden: dto.latestVersion.hidden,
@@ -158,7 +245,8 @@ const AttributeDesigner: React.FC<Props> = ({
     precision: dto.latestVersion.precision,
     trueLabel: dto.latestVersion.trueLabel,
     falseLabel: dto.latestVersion.falseLabel,
-  });
+    };
+  };
 
   const loadAttributes = async (
     categoryCode: string,
@@ -483,7 +571,57 @@ const AttributeDesigner: React.FC<Props> = ({
     setCurrentAttribute(updated);
   };
 
+  const resetWorkspaceState = () => {
+    setCurrentAttribute(null);
+    setBaselineAttribute(null);
+    setEnumOptions([]);
+    setBaselineEnumOptions([]);
+    setPreviewWarnings([]);
+    setHasUnsavedChanges(false);
+  };
+
+  const discardCurrentEditingState = () => {
+    if (selectedAttributeId && isNewAttributeId(selectedAttributeId)) {
+      setDataSource((prev) => prev.filter((item) => item.id !== selectedAttributeId));
+      setSelectedAttributeIds((prev) => prev.filter((id) => id !== selectedAttributeId));
+      setSelectedAttributeId(null);
+      resetWorkspaceState();
+      return;
+    }
+
+    if (baselineAttribute) {
+      setCurrentAttribute({ ...baselineAttribute });
+      setEnumOptions([...baselineEnumOptions]);
+    }
+    setPreviewWarnings([]);
+    setHasUnsavedChanges(false);
+  };
+
+  const runWithUnsavedChangesGuard = (action: () => void) => {
+    if (!hasUnsavedChanges) {
+      action();
+      return;
+    }
+
+    modal.confirm({
+      title: "当前属性修改尚未保存，是否放弃修改？",
+      content: "继续操作后未保存内容将丢失。",
+      okText: "放弃并继续",
+      cancelText: "继续编辑",
+      okType: "danger",
+      onOk: () => {
+        discardCurrentEditingState();
+        action();
+      },
+    });
+  };
+
   const applyMultiSelection = (ids: string[], primaryId: string | null) => {
+    setCurrentAttribute(null);
+    setBaselineAttribute(null);
+    setEnumOptions([]);
+    setBaselineEnumOptions([]);
+    setPreviewWarnings([]);
     setSelectedAttributeIds(ids);
     setSelectedAttributeId(ids.length === 1 ? (primaryId || ids[0]) : null);
   };
@@ -503,57 +641,50 @@ const AttributeDesigner: React.FC<Props> = ({
       return;
     }
 
-    modal.confirm({
-      title: "当前属性修改尚未保存，是否放弃修改？",
-      content: "切换后未保存内容将丢失。",
-      okText: "放弃并切换",
-      cancelText: "继续编辑",
-      okType: "danger",
-      onOk: () => {
-        if (baselineAttribute) {
-          setCurrentAttribute({ ...baselineAttribute });
-          setEnumOptions([...baselineEnumOptions]);
-        }
-        setHasUnsavedChanges(false);
-        applyMultiSelection(normalizedIds, nextPrimary);
-      },
+    runWithUnsavedChangesGuard(() => {
+      applyMultiSelection(normalizedIds, nextPrimary);
     });
   };
 
   const handleAddAttribute = () => {
-    const timestamp = Date.now();
-    const newAttr: AttributeItem = {
-      id: `new_attr_${timestamp}`,
-      code: "",
-      suggestedCode: "",
-      freezeKey: false,
-      name: "",
-      type: "enum",
-      version: 1,
-      isLatest: true,
-    };
-    setDataSource((prev) => [...prev, newAttr]);
-    if (!selectedAttributeId || !isNewAttributeId(selectedAttributeId)) {
+    runWithUnsavedChangesGuard(() => {
+      const timestamp = Date.now();
+      const newAttr = createEmptyAttributeDraft(`new_attr_${timestamp}`);
+      setDataSource((prev) => [...prev, newAttr]);
       setSelectedAttributeId(newAttr.id);
       setSelectedAttributeIds([newAttr.id]);
-    }
+      setCurrentAttribute({ ...newAttr });
+      setBaselineAttribute({ ...newAttr });
+      setEnumOptions([]);
+      setBaselineEnumOptions([]);
+      setPreviewWarnings([]);
+      setHasUnsavedChanges(false);
+    });
   };
 
   const handleDuplicateAttribute = (source: AttributeItem) => {
-    const timestamp = Date.now();
-    const duplicate: AttributeItem = {
-      ...source,
-      id: `new_attr_${timestamp}`,
-      code: "",
-      suggestedCode: "",
-      freezeKey: false,
-      name: source.name ? `${source.name}_COPY` : "",
-      version: 1,
-      isLatest: true,
-    };
-    setDataSource((prev) => [...prev, duplicate]);
-    setSelectedAttributeId(duplicate.id);
-    setSelectedAttributeIds([duplicate.id]);
+    runWithUnsavedChangesGuard(() => {
+      const timestamp = Date.now();
+      const duplicate: AttributeItem = {
+        ...source,
+        id: `new_attr_${timestamp}`,
+        code: "",
+        suggestedCode: "",
+        freezeKey: false,
+        name: source.name ? `${source.name}_COPY` : "",
+        version: 1,
+        isLatest: true,
+      };
+      setDataSource((prev) => [...prev, duplicate]);
+      setSelectedAttributeId(duplicate.id);
+      setSelectedAttributeIds([duplicate.id]);
+      setCurrentAttribute({ ...duplicate });
+      setBaselineAttribute({ ...duplicate });
+      setEnumOptions([]);
+      setBaselineEnumOptions([]);
+      setPreviewWarnings([]);
+      setHasUnsavedChanges(false);
+    });
   };
 
   const handleSingleSave = async (
@@ -583,7 +714,7 @@ const AttributeDesigner: React.FC<Props> = ({
           attributeField: attribute.attributeField,
           dataType: mapAttributeTypeToBackend(attribute.type),
           unit: attribute.unit,
-          defaultValue: attribute.defaultValue ? String(attribute.defaultValue) : undefined,
+          defaultValue: serializeDefaultValueForBackend(attribute.defaultValue),
           required: attribute.required,
           unique: attribute.unique,
           hidden: attribute.hidden,
@@ -815,6 +946,7 @@ const AttributeDesigner: React.FC<Props> = ({
         </Splitter.Panel>
         <Splitter.Panel>
           <AttributeWorkspace
+            key={selectedAttributeIds.length === 1 ? (currentAttribute?.id || selectedAttributeId || 'attribute-workspace-empty') : 'attribute-workspace-multi'}
             attribute={selectedAttributeIds.length === 1 ? currentAttribute : null}
             selectedCount={selectedAttributeIds.length}
             onUpdate={handleAttributeUpdate}

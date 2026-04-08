@@ -11,7 +11,7 @@ export interface AttributeItem {
   unit?: string;
   required?: boolean;
   description?: string;
-  defaultValue?: string | number | boolean;
+  defaultValue?: string | number | boolean | string[];
   
   // Frontend/Display properties
   hidden?: boolean;
