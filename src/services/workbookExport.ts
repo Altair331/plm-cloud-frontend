@@ -29,6 +29,7 @@ export type {
 } from '@/models/workbookExport';
 
 const WORKBOOK_EXPORT_BASE = '/api/meta/exports/workbook';
+const WORKBOOK_EXPORT_PLAN_TIMEOUT = 30000;
 
 const normalizeBaseUrl = (baseUrl: string): string => {
   return baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
@@ -57,7 +58,9 @@ export const workbookExportApi = {
   },
 
   plan(requestData: WorkbookExportStartRequestDto): Promise<WorkbookExportPlanResponseDto> {
-    return request.post(`${WORKBOOK_EXPORT_BASE}/plan`, requestData);
+    return request.post(`${WORKBOOK_EXPORT_BASE}/plan`, requestData, {
+      timeout: WORKBOOK_EXPORT_PLAN_TIMEOUT,
+    });
   },
 
   startJob(requestData: WorkbookExportStartRequestDto): Promise<WorkbookExportStartResponseDto> {

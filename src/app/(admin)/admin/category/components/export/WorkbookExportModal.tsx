@@ -83,6 +83,11 @@ ModuleRegistry.registerModules([AllCommunityModule]);
 const LOG_POLL_INTERVAL = 3000;
 const SSE_RECONNECT_DELAY = 3000;
 const PREVIEW_ROW_LIMIT = 50;
+const PREVIEW_SCOPE_ROOT_LIMIT = 3;
+const PREVIEW_SCOPE_NODE_LIMIT = 120;
+const PREVIEW_CATEGORY_REQUEST_LIMIT = 6;
+const PREVIEW_ATTRIBUTE_PAGE_SIZE = 20;
+const PREVIEW_ENUM_ATTRIBUTE_LIMIT = 10;
 
 const STATUS_LABELS: Record<string, string> = {
   QUEUED: '已排队',
@@ -701,8 +706,10 @@ const WorkbookExportModal: React.FC<WorkbookExportModalProps> = ({
       return [];
     }
 
+    const previewRootKeys = persistedKeys.slice(0, PREVIEW_SCOPE_ROOT_LIMIT);
+
     if (!config.includeChildren) {
-      return persistedKeys.map((key) => {
+      return previewRootKeys.map((key) => {
         const nodeRef = extractNodeRef(findNodeByKey(treeData, key));
         return {
           id: key,
@@ -719,12 +726,12 @@ const WorkbookExportModal: React.FC<WorkbookExportModalProps> = ({
 
     const merged = new Map<string, PreviewScopeCategory>();
     const responses = await Promise.allSettled(
-      persistedKeys.map((categoryId) => metaCategoryApi.getCategorySubtree({
+      previewRootKeys.map((categoryId) => metaCategoryApi.getCategorySubtree({
         parentId: categoryId,
         includeRoot: true,
         mode: 'FLAT',
         status: 'ALL',
-        nodeLimit: 10000,
+        nodeLimit: PREVIEW_SCOPE_NODE_LIMIT,
       })),
     );
 
@@ -738,6 +745,9 @@ const WorkbookExportModal: React.FC<WorkbookExportModalProps> = ({
         if (!key || merged.has(key)) {
           continue;
         }
+        if (merged.size >= PREVIEW_SCOPE_NODE_LIMIT) {
+          break;
+        }
         merged.set(key, {
           id: key,
           code: row?.code,
@@ -748,6 +758,10 @@ const WorkbookExportModal: React.FC<WorkbookExportModalProps> = ({
           level: row?.level,
           status: row?.status,
         });
+      }
+
+      if (merged.size >= PREVIEW_SCOPE_NODE_LIMIT) {
+        break;
       }
     }
 
@@ -786,13 +800,17 @@ const WorkbookExportModal: React.FC<WorkbookExportModalProps> = ({
       }
 
       if (activeModule === 'ATTRIBUTE') {
-        const categoryCodes = Array.from(new Set(scopeCategories.map((item) => item.code).filter((value): value is string => Boolean(value))));
+        const categoryCodes = Array.from(new Set(
+          scopeCategories
+            .map((item) => item.code)
+            .filter((value): value is string => Boolean(value)),
+        )).slice(0, PREVIEW_CATEGORY_REQUEST_LIMIT);
         const listResults = await Promise.allSettled(
           categoryCodes.map((categoryCode) => metaAttributeApi.listAttributes({
             businessDomain: resolvedBusinessDomain,
             categoryCode,
             page: 0,
-            size: 100,
+            size: PREVIEW_ATTRIBUTE_PAGE_SIZE,
           })),
         );
         const items = listResults.flatMap((result) => result.status === 'fulfilled' ? result.value.content : []).slice(0, PREVIEW_ROW_LIMIT);
@@ -808,17 +826,23 @@ const WorkbookExportModal: React.FC<WorkbookExportModalProps> = ({
       }
 
       if (activeModule === 'ENUM_OPTION') {
-        const categoryCodes = Array.from(new Set(scopeCategories.map((item) => item.code).filter((value): value is string => Boolean(value))));
+        const categoryCodes = Array.from(new Set(
+          scopeCategories
+            .map((item) => item.code)
+            .filter((value): value is string => Boolean(value)),
+        )).slice(0, PREVIEW_CATEGORY_REQUEST_LIMIT);
         const listResults = await Promise.allSettled(
           categoryCodes.map((categoryCode) => metaAttributeApi.listAttributes({
             businessDomain: resolvedBusinessDomain,
             categoryCode,
             page: 0,
-            size: 100,
+            size: PREVIEW_ATTRIBUTE_PAGE_SIZE,
           })),
         );
         const attributeItems = listResults.flatMap((result) => result.status === 'fulfilled' ? result.value.content : []);
-        const enumCandidates = attributeItems.filter((item: any) => ['enum', 'multi-enum'].includes(String(item?.dataType)) || item?.hasLov);
+        const enumCandidates = attributeItems
+          .filter((item: any) => ['enum', 'multi-enum'].includes(String(item?.dataType)) || item?.hasLov)
+          .slice(0, PREVIEW_ENUM_ATTRIBUTE_LIMIT);
         const enumRows: PreviewTableRow[] = [];
 
         for (const item of enumCandidates) {
@@ -1153,8 +1177,9 @@ const WorkbookExportModal: React.FC<WorkbookExportModalProps> = ({
     }
 
     const planned = await loadPlan({ force: true });
+    const requestToStart = planned?.normalizedRequest ?? exportRequest;
     if (!planned) {
-      return;
+      message.warning('预校验未在限定时间内完成，已直接按当前配置启动导出任务');
     }
 
     resetRuntime();
@@ -1162,7 +1187,7 @@ const WorkbookExportModal: React.FC<WorkbookExportModalProps> = ({
     setExporting(true);
 
     try {
-      const response = await workbookExportApi.startJob(planned.normalizedRequest);
+      const response = await workbookExportApi.startJob(requestToStart);
       setRuntime({
         ...createEmptyRuntimeState(),
         jobId: response.jobId,
@@ -1783,7 +1808,7 @@ const WorkbookExportModal: React.FC<WorkbookExportModalProps> = ({
               }}
             >
               <InfoCircleOutlined style={{ marginTop: 2 }} />
-              <span>左侧仅维护当前已选字段，可继续添加字段、编辑表头并拖拽排序，右侧预览会按真实接口结果实时更新。</span>
+              <span>左侧仅维护当前已选字段，可继续添加字段、编辑表头并拖拽排序；右侧为抽样预览，只加载少量范围数据避免大批量查询超时。</span>
             </div>
 
             {planResult?.warnings?.length ? (
