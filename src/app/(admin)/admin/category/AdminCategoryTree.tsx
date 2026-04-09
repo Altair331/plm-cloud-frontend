@@ -333,7 +333,7 @@ const AdminCategoryTree: React.FC<AdminCategoryTreeProps> = ({
             onMenuClick(key, contextMenuState.node);
           } else {
             messageApi.info(
-              `Action: ${key} on Node: ${contextMenuState.node?.key}`,
+              `Action: ${String(key)} on Node: ${String(contextMenuState.node?.key ?? '')}`,
             );
           }
           setContextMenuState((prev) => ({ ...prev, visible: false }));

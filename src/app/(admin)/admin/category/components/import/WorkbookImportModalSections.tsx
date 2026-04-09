@@ -1144,7 +1144,6 @@ export const WorkbookImportDryRunResultPanel: React.FC<
             current={previewPage}
             pageSize={100}
             total={previewTotal}
-            size="default"
             showSizeChanger={false}
             showTotal={(total) => `共 ${total} 条`}
             onChange={onPreviewPageChange}

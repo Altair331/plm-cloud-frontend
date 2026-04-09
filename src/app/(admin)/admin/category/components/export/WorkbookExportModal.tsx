@@ -2125,6 +2125,16 @@ const WorkbookExportModal: React.FC<WorkbookExportModalProps> = ({
           font-weight: 600;
         }
 
+        .workbook-export-mapping-grid .ag-header-cell[col-id="0"],
+        .workbook-export-mapping-grid .ag-header-cell[col-id="3"] {
+          text-align: center;
+        }
+
+        .workbook-export-mapping-grid .ag-header-cell[col-id="0"] .ag-header-cell-label,
+        .workbook-export-mapping-grid .ag-header-cell[col-id="3"] .ag-header-cell-label {
+          justify-content: center;
+        }
+
         .workbook-export-mapping-grid .ag-header-cell,
         .workbook-export-mapping-grid .ag-cell {
           border-right: 0;
@@ -2178,6 +2188,11 @@ const WorkbookExportModal: React.FC<WorkbookExportModalProps> = ({
         .workbook-export-preview-grid .ag-cell {
           display: flex;
           align-items: center;
+        }
+
+        .workbook-export-mapping-grid .ag-cell[col-id="0"],
+        .workbook-export-mapping-grid .ag-cell[col-id="3"] {
+          justify-content: center;
         }
 
         .workbook-export-mapping-grid .ag-body-horizontal-scroll {

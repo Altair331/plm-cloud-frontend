@@ -49,7 +49,7 @@ const CategoryDetail: React.FC<CategoryDetailProps> = ({ selectedKey, selectedNo
         <Card title="基本信息" extra={<Button type="link" icon={<EditOutlined />}>编辑</Button>}>
           <Descriptions column={2}>
             <Descriptions.Item label="分类名称">{typeof selectedNode?.title === 'function' ? (selectedNode!.title as (data: DataNode) => React.ReactNode)(selectedNode as DataNode) : selectedNode?.title}</Descriptions.Item>
-            <Descriptions.Item label="分类编码">{selectedKey}</Descriptions.Item>
+            <Descriptions.Item label="分类编码">{String(selectedKey)}</Descriptions.Item>
             <Descriptions.Item label="类型">
               {isIndustry ? <Tag color="blue">行业分类</Tag> : <Tag color="green">自定义分类</Tag>}
             </Descriptions.Item>
