@@ -56,6 +56,13 @@ const AdminCategoryTreeToolbar: React.FC<AdminCategoryTreeToolbarProps> = ({
       onClick: onImport,
       variant: "neutral",
     },
+    {
+      key: "export",
+      icon: <ExportOutlined />,
+      tooltip: "导出",
+      onClick: onExport,
+      variant: "neutral",
+    },
   ];
 
   const batchActions: ToolbarAction[] = [
@@ -79,13 +86,6 @@ const AdminCategoryTreeToolbar: React.FC<AdminCategoryTreeToolbarProps> = ({
       tooltip: "删除",
       onClick: onDelete,
       variant: "danger",
-    },
-    {
-      key: "export",
-      icon: <ExportOutlined />,
-      tooltip: "导出",
-      onClick: onExport,
-      variant: "neutral",
     },
   ];
 

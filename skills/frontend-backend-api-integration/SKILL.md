@@ -54,6 +54,7 @@ description: PLM Cloud 前后端接口对接标准规范（Next.js + TypeScript 
 - 分类移动或复制 API：`../plm-cloud-platform/api-document/api-specification-documentation/category-batch-transfer-api.md`
 - 字典 API：`../plm-cloud-platform/api-document/api-specification-documentation/dictionary-api.md`
 - 编码规则 API：`../plm-cloud-platform/api-document/api-specification-documentation/code-rule-api.md`
+- workbook导出 API：`../plm-cloud-platform/api-document/api-specification-documentation/workbook-export-api.md`
 
 ### 2.6 后端代码（副参考）
 

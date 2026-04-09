@@ -25,7 +25,6 @@ import {
   type MetaCategoryBatchTransferResponseDto,
   type MetaCategoryBatchTransferTopologyResponseDto,
   type MetaCategoryDetailDto,
-  type MetaCategoryTreeNodeDto,
 } from "@/services/metaCategory";
 import { semanticStatusColors } from "@/styles/colors";
 
@@ -59,31 +58,6 @@ const statusActionLabel: Record<CategorySemanticStatus, string> = {
   CREATED: "转创建",
   EFFECTIVE: "转生效",
   INVALID: "转失效",
-};
-
-const triggerJsonDownload = (fileName: string, payload: unknown) => {
-  const blob = new Blob([JSON.stringify(payload, null, 2)], {
-    type: "application/json;charset=utf-8",
-  });
-  const objectUrl = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = objectUrl;
-  anchor.download = fileName;
-  document.body.appendChild(anchor);
-  anchor.click();
-  document.body.removeChild(anchor);
-  URL.revokeObjectURL(objectUrl);
-};
-
-const buildCategoryExportFileName = (nodes: DataNode[]) => {
-  const timestamp = new Date().toISOString().replace(/[.:]/g, "-");
-  if (nodes.length === 1) {
-    const nodeRef = (nodes[0] as any)?.dataRef as { code?: string } | undefined;
-    const code = nodeRef?.code || String(nodes[0].key);
-    return `category-export-${code}-${timestamp}.json`;
-  }
-
-  return `category-export-${nodes.length}-nodes-${timestamp}.json`;
 };
 
 const AdminCategoryTree: React.FC<AdminCategoryTreeProps> = ({
@@ -291,79 +265,6 @@ const AdminCategoryTree: React.FC<AdminCategoryTreeProps> = ({
       .filter((node): node is DataNode => !!node);
   };
 
-  const resolveSingleCheckedNode = (checkedKeys: React.Key[]) => {
-    if (checkedKeys.length === 0) return null;
-    if (checkedKeys.length > 1) {
-      messageApi.info("当前操作仅支持单个分类");
-      return null;
-    }
-    return findNodeByKey(props.treeData, checkedKeys[0]);
-  };
-
-  const exportCheckedNodes = async (checkedKeys: React.Key[]) => {
-    const nodes = resolveCheckedNodes(checkedKeys);
-    if (!nodes.length) {
-      messageApi.warning("请先选择要导出的分类节点");
-      return;
-    }
-
-    const persistedNodes = nodes.filter((node) => !String(node.key).startsWith("local_"));
-    if (!persistedNodes.length) {
-      messageApi.warning("本地临时节点暂不支持导出，请先保存后再导出");
-      return;
-    }
-
-    if (persistedNodes.length !== nodes.length) {
-      messageApi.warning("已自动忽略未保存的本地节点，仅导出已持久化分类");
-    }
-
-    try {
-      const exportedItems = await Promise.all(
-        persistedNodes.map(async (node) => {
-          const nodeRef = (node as any)?.dataRef as
-            | {
-                code?: string;
-                name?: string;
-                businessDomain?: string;
-                level?: number;
-                path?: string;
-              }
-            | undefined;
-
-          const response = await metaCategoryApi.getCategorySubtree({
-            parentId: String(node.key),
-            includeRoot: true,
-            mode: "TREE",
-          });
-
-          return {
-            id: String(node.key),
-            code: nodeRef?.code || null,
-            name: nodeRef?.name || null,
-            businessDomain: nodeRef?.businessDomain || defaultBusinessDomain || null,
-            level: nodeRef?.level ?? null,
-            path: nodeRef?.path || null,
-            totalNodes: response.totalNodes,
-            truncated: response.truncated,
-            depthReached: response.depthReached ?? null,
-            message: response.message ?? null,
-            data: response.data as MetaCategoryTreeNodeDto | MetaCategoryTreeNodeDto[],
-          };
-        }),
-      );
-
-      triggerJsonDownload(buildCategoryExportFileName(persistedNodes), {
-        exportedAt: new Date().toISOString(),
-        totalRoots: exportedItems.length,
-        items: exportedItems,
-      });
-
-      messageApi.success(`已导出 ${exportedItems.length} 个分类节点`);
-    } catch (error: any) {
-      messageApi.error(error?.message || error?.error || "分类导出失败");
-    }
-  };
-
   return (
     <>
       <CategoryTree
@@ -409,8 +310,7 @@ const AdminCategoryTree: React.FC<AdminCategoryTreeProps> = ({
               }}
               onImport={() => setImportModalVisible(true)}
               onExport={() => {
-                if (!hasCheckedNodes) return;
-                setExportCheckedKeys(checkedKeys);
+                setExportCheckedKeys([]);
                 setExportModalVisible(true);
               }}
             />
@@ -506,8 +406,11 @@ const AdminCategoryTree: React.FC<AdminCategoryTreeProps> = ({
       <WorkbookExportModal
         open={exportModalVisible}
         checkedKeys={exportCheckedKeys}
+        treeData={props.treeData}
+        defaultBusinessDomain={defaultBusinessDomain}
         onCancel={() => setExportModalVisible(false)}
         onSuccess={() => {
+          setExportModalVisible(false);
           messageApi.success("完整数据导出文件已生成");
         }}
       />
