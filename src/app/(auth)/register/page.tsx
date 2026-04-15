@@ -4,7 +4,6 @@ import React, { useState, useEffect } from 'react';
 import { Form, Input, Button, Typography, Divider, message, Collapse, Checkbox, Flex } from 'antd';
 import { GoogleOutlined, CheckCircleFilled } from '@ant-design/icons';
 import { evaluatePassword } from '@/utils/passwordRules';
-import './register.css';
 import { authApi, isAuthErrorResponse } from '@/services/auth';
 import type { AuthSendRegisterEmailCodeResponseDto } from '@/models/auth';
 import { useRouter } from 'next/navigation';

@@ -2,12 +2,11 @@
 
 import { Form, Input, Button, Typography, Checkbox, Divider, message } from "antd";
 import { useEffect, useState } from "react";
-import "./login.css";
 import { ArrowRightOutlined, GoogleOutlined, GithubOutlined, QuestionCircleOutlined, LeftOutlined } from "@ant-design/icons";
 import Illustration from "@/assets/illustration-final.svg";
 import Image from "next/image";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { authApi, isAuthErrorResponse } from '@/services/auth';
 import { persistPlatformAuthState } from '@/utils/authStorage';
 
@@ -28,17 +27,18 @@ export default function LoginPage() {
   const [step, setStep] = useState<1 | 2>(1);
   const [plmIdCache, setPlmIdCache] = useState('');
   const router = useRouter();
-  const searchParams = useSearchParams();
 
   useEffect(() => {
-    const initialIdentifier = searchParams.get('identifier')?.trim();
+    const initialIdentifier = new URLSearchParams(window.location.search)
+      .get('identifier')
+      ?.trim();
     if (!initialIdentifier) {
       return;
     }
 
     setPlmIdCache(initialIdentifier);
     stepOneForm.setFieldsValue({ plmId: initialIdentifier });
-  }, [searchParams, stepOneForm]);
+  }, [stepOneForm]);
 
   const handleStep1Finish = ({ plmId }: LoginFormValuesStep1) => {
     setPlmIdCache(plmId.trim());
