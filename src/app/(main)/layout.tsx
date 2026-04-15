@@ -141,7 +141,7 @@ const menuData: MenuItem[] = [
 
 const BasicLayout: React.FC<React.PropsWithChildren> = ({ children }) => {
   return (
-    <UnifiedLayout menuData={menuData}>
+    <UnifiedLayout menuData={menuData} enableWorkspaceSwitcher>
         {children}
     </UnifiedLayout>
   )

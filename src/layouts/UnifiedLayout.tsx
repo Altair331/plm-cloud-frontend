@@ -7,6 +7,7 @@ import dynamic from 'next/dynamic';
 const ProLayout = dynamic(() => import('@ant-design/pro-components').then(mod => mod.ProLayout), { ssr: false });
 const AntdApp = dynamic(() => import('antd').then(mod => mod.App), { ssr: false });
 import HeaderRight from "@/layouts/components/HeaderRight";
+import WorkspaceSwitcher from "@/layouts/components/WorkspaceSwitcher";
 import { usePathname, useRouter } from "next/navigation";
 import { themeTokens, componentTokens } from "@/styles/theme";
 import { getPalette } from "@/styles/colors";
@@ -34,6 +35,7 @@ export interface UnifiedLayoutProps {
     homePath?: string;
     homeTitle?: string;
     title?: string;
+  enableWorkspaceSwitcher?: boolean;
 }
 
 const DefaultHomePath = "/dashboard";
@@ -76,7 +78,8 @@ const UnifiedLayout: React.FC<UnifiedLayoutProps> = ({
     menuData, 
     homePath = DefaultHomePath, 
     homeTitle = DefaultHomeTitle,
-    title = "PLM Cloud Platform"
+  title = "PLM Cloud Platform",
+  enableWorkspaceSwitcher = false,
 }) => {
   const pathname = usePathname();
   const router = useRouter();
@@ -477,7 +480,11 @@ const UnifiedLayout: React.FC<UnifiedLayoutProps> = ({
               }}
             />
             {logo}
-            {title}
+            {enableWorkspaceSwitcher ? (
+              <WorkspaceSwitcher palette={palette} />
+            ) : (
+              title
+            )}
           </div>
         )}
         location={{ pathname }}
@@ -525,16 +532,6 @@ const UnifiedLayout: React.FC<UnifiedLayoutProps> = ({
             gap: 16,
           }}
         >
-          {/* <Breadcrumb
-            items={breadcrumbItems}
-            style={{
-              fontSize: 13,
-              color: palette.textSecondary,
-              height: 22,
-              display: "flex",
-              alignItems: "center",
-            }}
-          /> */}
           <div
             style={{
               background: palette.bgContainer,

@@ -68,9 +68,9 @@ export default function LoginPage() {
       );
 
       if (response.workspaceOptions.length > 0 || response.defaultWorkspace || response.currentWorkspace) {
-        message.success('登录成功，平台登录态已建立。Workspace 切换将在后续接入。');
+        message.success('登录成功。');
       } else {
-        message.success('登录成功。当前账号尚未接入 Workspace 流程。');
+        message.success('登录成功，当前账号尚未配置 Workspace。');
       }
 
       router.push('/dashboard');
