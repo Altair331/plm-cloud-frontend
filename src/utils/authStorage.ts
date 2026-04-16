@@ -1,4 +1,4 @@
-import type { PlatformAuthState, WorkspaceSessionState } from '@/models/auth';
+import type { AuthWorkspaceSessionDto, PlatformAuthState, WorkspaceSessionState } from '@/models/auth';
 import { createEmptyPlatformAuthState, createEmptyWorkspaceSessionState } from '@/models/auth';
 
 type AuthPersistence = 'local' | 'session';
@@ -50,6 +50,18 @@ const readStorageSnapshot = (persistence: AuthPersistence): AuthStorageSnapshot 
   return storage ? parseAuthStorageSnapshot(storage.getItem(AUTH_STORAGE_KEY)) : null;
 };
 
+const resolvePersistedAuthPersistence = (): AuthPersistence => {
+  if (readStorageSnapshot('local')) {
+    return 'local';
+  }
+
+  if (readStorageSnapshot('session')) {
+    return 'session';
+  }
+
+  return 'local';
+};
+
 const clearStorageSnapshot = (persistence: AuthPersistence): void => {
   const storage = getStorage(persistence);
   storage?.removeItem(AUTH_STORAGE_KEY);
@@ -84,6 +96,46 @@ export const persistPlatformAuthState = (
   };
 
   persistAuthSnapshot(nextSnapshot, options?.remember === false ? 'session' : 'local');
+};
+
+export const mapWorkspaceSessionDtoToState = (
+  workspaceSession: AuthWorkspaceSessionDto | null,
+): WorkspaceSessionState => {
+  if (!workspaceSession) {
+    return createEmptyWorkspaceSessionState();
+  }
+
+  return {
+    workspaceToken: workspaceSession.workspaceToken,
+    workspaceTokenName: workspaceSession.workspaceTokenName,
+    workspaceId: workspaceSession.workspaceId,
+    workspaceCode: workspaceSession.workspaceCode,
+    workspaceName: workspaceSession.workspaceName,
+    workspaceMemberId: workspaceSession.workspaceMemberId,
+    roleCodes: [...workspaceSession.roleCodes],
+  };
+};
+
+export const persistWorkspaceSessionState = (
+  workspaceSession: WorkspaceSessionState | null,
+  options?: {
+    remember?: boolean;
+  },
+): void => {
+  const currentSnapshot = readPersistedAuthSnapshot();
+  const nextSnapshot: AuthStorageSnapshot = {
+    platformAuth: currentSnapshot.platformAuth,
+    workspaceSession: workspaceSession ?? createEmptyWorkspaceSessionState(),
+  };
+
+  persistAuthSnapshot(
+    nextSnapshot,
+    options?.remember === undefined
+      ? resolvePersistedAuthPersistence()
+      : options.remember === false
+        ? 'session'
+        : 'local',
+  );
 };
 
 export const clearPersistedAuthState = (): void => {

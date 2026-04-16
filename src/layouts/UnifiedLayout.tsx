@@ -27,6 +27,8 @@ export interface MenuItem {
   name: string;
   icon?: React.ReactNode;
   children?: MenuItem[];
+  menuRenderContent?: React.ReactNode;
+  disabled?: boolean;
 }
 
 export interface UnifiedLayoutProps {
@@ -36,6 +38,9 @@ export interface UnifiedLayoutProps {
     homeTitle?: string;
     title?: string;
   enableWorkspaceSwitcher?: boolean;
+  showHeaderRight?: boolean;
+  showTabs?: boolean;
+  contentVariant?: 'card' | 'plain';
 }
 
 const DefaultHomePath = "/dashboard";
@@ -43,7 +48,7 @@ const DefaultHomeTitle = "仪表盘";
 
 type RouteTab = {
   key: string;
-  label: string;
+  label: React.ReactNode;
   closable: boolean;
 };
 
@@ -80,6 +85,9 @@ const UnifiedLayout: React.FC<UnifiedLayoutProps> = ({
     homeTitle = DefaultHomeTitle,
   title = "PLM Cloud Platform",
   enableWorkspaceSwitcher = false,
+  showHeaderRight = true,
+  showTabs = true,
+  contentVariant = 'card',
 }) => {
   const pathname = usePathname();
   const router = useRouter();
@@ -495,20 +503,27 @@ const UnifiedLayout: React.FC<UnifiedLayoutProps> = ({
               event.preventDefault();
             }}
             onClick={() => {
-              if (item.path) router.push(item.path);
+              if (item.path && !item.disabled) router.push(item.path);
+            }}
+            style={{
+              display: 'block',
+              width: '100%',
+              cursor: item.disabled ? 'default' : 'pointer',
             }}
           >
-            {dom}
+            {item.menuRenderContent ?? dom}
           </span>
         )}
         avatarProps={undefined}
-        rightContentRender={() => (
-          <HeaderRight
-            isDarkMode={isDarkMode}
-            onToggleTheme={handleToggleTheme}
-            palette={palette}
-          />
-        )}
+        rightContentRender={showHeaderRight
+          ? () => (
+              <HeaderRight
+                isDarkMode={isDarkMode}
+                onToggleTheme={handleToggleTheme}
+                palette={palette}
+              />
+            )
+          : false}
         menu={{
           defaultOpenAll: false,
         }}
@@ -532,48 +547,64 @@ const UnifiedLayout: React.FC<UnifiedLayoutProps> = ({
             gap: 16,
           }}
         >
-          <div
-            style={{
-              background: palette.bgContainer,
-              borderRadius: 12,
-              boxShadow: `0 12px 40px -16px ${palette.shadowColor}`,
-              display: "flex",
-              flexDirection: "column",
-              flex: 1,
-              minHeight: 0,
-            }}
-          >
-            <Tabs
-              className="layout-tabs"
-              activeKey={currentPath}
-              onChange={handleTabChange}
-              tabBarGutter={0}
-              animated
-              tabBarStyle={{ padding: "0 16px 0 0", margin: 0 }}
-              indicator={{
-                size: (origin: number, info?: { tabKey?: React.Key }) => {
-                  const key = info?.tabKey != null ? String(info.tabKey) : undefined;
-                  if (key && tabTextWidths[key] != null) {
-                    const width = tabTextWidths[key];
-                    return Math.min(origin, Math.max(width, 24));
-                  }
-                  return Math.max(origin - 24, 32);
-                },
-                align: "center",
-              }}
-              items={tabItems}
-            />
+          {contentVariant === 'plain' ? (
             <div
               style={{
-                padding: 16,
                 flex: 1,
                 minHeight: 0,
-                overflow: "auto",
+                overflow: 'auto',
+                display: 'flex',
+                flexDirection: 'column',
               }}
             >
               {children}
             </div>
-          </div>
+          ) : (
+            <div
+              style={{
+                background: palette.bgContainer,
+                borderRadius: 12,
+                boxShadow: `0 12px 40px -16px ${palette.shadowColor}`,
+                display: "flex",
+                flexDirection: "column",
+                flex: 1,
+                minHeight: 0,
+              }}
+            >
+              {showTabs ? (
+                <Tabs
+                  className="layout-tabs"
+                  activeKey={currentPath}
+                  onChange={handleTabChange}
+                  tabBarGutter={0}
+                  animated
+                  tabBarStyle={{ padding: "0 16px 0 0", margin: 0 }}
+                  indicator={{
+                    size: (origin: number, info?: { tabKey?: React.Key }) => {
+                      const key = info?.tabKey != null ? String(info.tabKey) : undefined;
+                      if (key && tabTextWidths[key] != null) {
+                        const width = tabTextWidths[key];
+                        return Math.min(origin, Math.max(width, 24));
+                      }
+                      return Math.max(origin - 24, 32);
+                    },
+                    align: "center",
+                  }}
+                  items={tabItems}
+                />
+              ) : null}
+              <div
+                style={{
+                  padding: 16,
+                  flex: 1,
+                  minHeight: 0,
+                  overflow: "auto",
+                }}
+              >
+                {children}
+              </div>
+            </div>
+          )}
         </div>
       </ProLayout>
       </AntdApp>

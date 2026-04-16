@@ -1,6 +1,6 @@
 'use client';
 
-import React from "react";
+import React, { useEffect } from "react";
 import {
   UnorderedListOutlined,
   DashboardOutlined,
@@ -14,7 +14,9 @@ import {
   UserOutlined,
   FolderOpenOutlined,
 } from "@ant-design/icons";
+import { usePathname, useRouter } from "next/navigation";
 import UnifiedLayout, { MenuItem } from "@/layouts/UnifiedLayout";
+import { readPersistedAuthSnapshot } from "@/utils/authStorage";
 
 const menuData: MenuItem[] = [
   {
@@ -140,6 +142,20 @@ const menuData: MenuItem[] = [
 ];
 
 const BasicLayout: React.FC<React.PropsWithChildren> = ({ children }) => {
+  const router = useRouter();
+  const pathname = usePathname();
+
+  useEffect(() => {
+    const snapshot = readPersistedAuthSnapshot();
+    if (!snapshot.platformAuth.platformToken) {
+      return;
+    }
+
+    if (!snapshot.workspaceSession.workspaceId) {
+      router.replace('/workspace/create');
+    }
+  }, [pathname, router]);
+
   return (
     <UnifiedLayout menuData={menuData} enableWorkspaceSwitcher>
         {children}

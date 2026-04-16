@@ -1,0 +1,51 @@
+.workspace-sidebar-skeleton-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 24px;
+  width: 100%;
+  line-height: 0;
+}
+
+.workspace-sidebar-skeleton-dot-slot {
+  width: 14px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 14px;
+}
+
+.workspace-sidebar-skeleton-dot {
+  width: 8px;
+  height: 8px;
+  display: block;
+  border-radius: 999px;
+  background: var(--menu-text, rgba(0, 0, 0, 0.28));
+  opacity: 0.35;
+}
+
+.workspace-sidebar-skeleton-line-shell {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  max-width: calc(100% - 26px);
+  line-height: 0;
+}
+
+.workspace-sidebar-skeleton-line.ant-skeleton.ant-skeleton-element {
+  display: block;
+  width: 100%;
+  line-height: 0;
+}
+
+.workspace-sidebar-skeleton-line.ant-skeleton.ant-skeleton-element .ant-skeleton-button {
+  display: block;
+  width: 100% !important;
+  min-width: 0;
+  height: 12px !important;
+  min-height: 12px;
+  margin: 0;
+  vertical-align: top;
+  border-radius: 999px;
+}

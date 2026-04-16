@@ -49,6 +49,8 @@ export interface AuthUserSummaryDto {
   email: string | null;
   phone: string | null;
   status: AuthUserStatus;
+  isFirstLogin: boolean;
+  workspaceCount: number;
 }
 
 export interface AuthWorkspaceSummaryDto {

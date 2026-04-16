@@ -8,7 +8,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { authApi, isAuthErrorResponse } from '@/services/auth';
-import { persistPlatformAuthState } from '@/utils/authStorage';
+import { mapWorkspaceSessionDtoToState, persistPlatformAuthState, persistWorkspaceSessionState } from '@/utils/authStorage';
 
 const { Title, Text } = Typography;
 
@@ -67,13 +67,22 @@ export default function LoginPage() {
         },
       );
 
-      if (response.workspaceOptions.length > 0 || response.defaultWorkspace || response.currentWorkspace) {
+      persistWorkspaceSessionState(
+        mapWorkspaceSessionDtoToState(response.currentWorkspace),
+        {
+          remember: values.remember,
+        },
+      );
+
+      const hasWorkspace = response.workspaceOptions.length > 0 || response.defaultWorkspace || response.currentWorkspace;
+
+      if (hasWorkspace) {
         message.success('登录成功。');
       } else {
-        message.success('登录成功，当前账号尚未配置 Workspace。');
+        message.success('登录成功，请先创建工作区。');
       }
 
-      router.push('/dashboard');
+      router.push(hasWorkspace ? '/dashboard' : '/workspace/create');
     } catch (error) {
       if (isAuthErrorResponse(error)) {
         if (error.code === 'AUTH_INVALID_CREDENTIALS') {
