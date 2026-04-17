@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import {
   UnorderedListOutlined,
   DashboardOutlined,
@@ -14,9 +14,18 @@ import {
   UserOutlined,
   FolderOpenOutlined,
 } from "@ant-design/icons";
+import { Spin } from 'antd';
 import { usePathname, useRouter } from "next/navigation";
 import UnifiedLayout, { MenuItem } from "@/layouts/UnifiedLayout";
-import { readPersistedAuthSnapshot } from "@/utils/authStorage";
+import { authApi, isAuthErrorResponse } from '@/services/auth';
+import {
+  clearPersistedAuthState,
+  mapWorkspaceSessionDtoToState,
+  persistPlatformAuthState,
+  persistWorkspaceSessionState,
+  readPersistedAuthHeaders,
+  readPersistedAuthSnapshot,
+} from "@/utils/authStorage";
 
 const menuData: MenuItem[] = [
   {
@@ -144,21 +153,155 @@ const menuData: MenuItem[] = [
 const BasicLayout: React.FC<React.PropsWithChildren> = ({ children }) => {
   const router = useRouter();
   const pathname = usePathname();
+  const [checkingAccess, setCheckingAccess] = useState(true);
 
   useEffect(() => {
-    const snapshot = readPersistedAuthSnapshot();
-    if (!snapshot.platformAuth.platformToken) {
-      return;
-    }
+    let active = true;
 
-    const shouldEnterWorkspaceCreation =
-      snapshot.platformAuth.user?.isFirstLogin === true ||
-      snapshot.platformAuth.user?.workspaceCount === 0;
+    const restoreAccess = async () => {
+      const persistedHeaders = readPersistedAuthHeaders();
+      if (!persistedHeaders.platformToken || !persistedHeaders.platformTokenName) {
+        clearPersistedAuthState();
+        router.replace('/login');
+        return;
+      }
 
-    if (shouldEnterWorkspaceCreation && !snapshot.workspaceSession.workspaceId) {
-      router.replace('/workspace/create');
-    }
+      try {
+        const me = await authApi.getMe(persistedHeaders);
+
+        if (!active) {
+          return;
+        }
+
+        const currentSnapshot = readPersistedAuthSnapshot();
+        persistPlatformAuthState({
+          ...currentSnapshot.platformAuth,
+          user: me.user,
+        });
+
+        const shouldCreateWorkspace = me.user.isFirstLogin || me.user.workspaceCount === 0;
+
+        if (shouldCreateWorkspace) {
+          persistWorkspaceSessionState(null);
+          router.replace('/workspace/create');
+          return;
+        }
+
+        if (me.currentWorkspace) {
+          persistWorkspaceSessionState(mapWorkspaceSessionDtoToState(me.currentWorkspace));
+          setCheckingAccess(false);
+          return;
+        }
+
+        const targetWorkspaceId = me.defaultWorkspace?.workspaceId ?? me.workspaceOptions[0]?.workspaceId;
+        if (!targetWorkspaceId) {
+          router.replace('/workspace/create');
+          return;
+        }
+
+        const restoredSession = await authApi.switchWorkspace(
+          {
+            workspaceId: targetWorkspaceId,
+            rememberAsDefault: false,
+          },
+          persistedHeaders,
+        );
+
+        if (!active) {
+          return;
+        }
+
+        persistWorkspaceSessionState(mapWorkspaceSessionDtoToState(restoredSession));
+        setCheckingAccess(false);
+      } catch (error) {
+        if (!active) {
+          return;
+        }
+
+        if (isAuthErrorResponse(error)) {
+          if (error.code === 'AUTH_NOT_LOGGED_IN') {
+            clearPersistedAuthState();
+            router.replace('/login');
+            return;
+          }
+
+          if (
+            error.code === 'WORKSPACE_MEMBER_NOT_FOUND'
+            || error.code === 'WORKSPACE_MEMBER_INACTIVE'
+            || error.code === 'WORKSPACE_NOT_FOUND'
+            || error.code === 'WORKSPACE_NOT_ACTIVE'
+          ) {
+            persistWorkspaceSessionState(null);
+
+            try {
+              const workspaces = await authApi.listWorkspaces(persistedHeaders);
+              if (!active) {
+                return;
+              }
+
+              if (workspaces.length === 0) {
+                const snapshot = readPersistedAuthSnapshot();
+                if (snapshot.platformAuth.user) {
+                  persistPlatformAuthState({
+                    ...snapshot.platformAuth,
+                    user: {
+                      ...snapshot.platformAuth.user,
+                      workspaceCount: 0,
+                    },
+                  });
+                }
+                router.replace('/workspace/create');
+                return;
+              }
+
+              const restoredSession = await authApi.switchWorkspace(
+                {
+                  workspaceId: workspaces[0].workspaceId,
+                  rememberAsDefault: false,
+                },
+                persistedHeaders,
+              );
+
+              if (!active) {
+                return;
+              }
+
+              persistWorkspaceSessionState(mapWorkspaceSessionDtoToState(restoredSession));
+              setCheckingAccess(false);
+              return;
+            } catch {
+              router.replace('/workspace/create');
+              return;
+            }
+          }
+        }
+
+        router.replace('/login');
+      }
+    };
+
+    void restoreAccess();
+
+    return () => {
+      active = false;
+    };
   }, [pathname, router]);
+
+  if (checkingAccess) {
+    return (
+      <div
+        style={{
+          minHeight: '100vh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: '#f5f7fa',
+        }}
+      >
+        <Spin size="large" />
+      </div>
+    );
+  }
 
   return (
     <UnifiedLayout menuData={menuData} enableWorkspaceSwitcher>

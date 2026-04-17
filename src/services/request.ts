@@ -15,11 +15,19 @@ request.interceptors.request.use((config) => {
     ? config.headers
     : new AxiosHeaders(config.headers ?? {});
 
-  if (authSnapshot.platformAuth.platformTokenName && authSnapshot.platformAuth.platformToken) {
+  const hasExplicitPlatformHeader = Boolean(
+    authSnapshot.platformAuth.platformTokenName && mergedHeaders.has(authSnapshot.platformAuth.platformTokenName),
+  );
+  const hasExplicitWorkspaceHeader = Boolean(
+    authSnapshot.workspaceSession.workspaceTokenName && mergedHeaders.has(authSnapshot.workspaceSession.workspaceTokenName),
+  );
+  const hasExplicitAuthHeader = hasExplicitPlatformHeader || hasExplicitWorkspaceHeader;
+
+  if (!hasExplicitAuthHeader && authSnapshot.platformAuth.platformTokenName && authSnapshot.platformAuth.platformToken) {
     mergedHeaders.set(authSnapshot.platformAuth.platformTokenName, authSnapshot.platformAuth.platformToken);
   }
 
-  if (authSnapshot.workspaceSession.workspaceTokenName && authSnapshot.workspaceSession.workspaceToken) {
+  if (!hasExplicitAuthHeader && authSnapshot.workspaceSession.workspaceTokenName && authSnapshot.workspaceSession.workspaceToken) {
     mergedHeaders.set(authSnapshot.workspaceSession.workspaceTokenName, authSnapshot.workspaceSession.workspaceToken);
   }
 

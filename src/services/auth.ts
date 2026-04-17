@@ -11,6 +11,10 @@ import type {
   AuthRequestHeaders,
   AuthSendRegisterEmailCodeRequestDto,
   AuthSendRegisterEmailCodeResponseDto,
+  AuthWorkspaceInvitationEmailBatchRequestDto,
+  AuthWorkspaceInvitationEmailBatchResponseDto,
+  AuthWorkspaceInvitationLinkCreateRequestDto,
+  AuthWorkspaceInvitationLinkDto,
   AuthWorkspaceBootstrapOptionsDto,
   AuthSwitchWorkspaceRequestDto,
   AuthWorkspaceSessionDto,
@@ -31,6 +35,14 @@ export type {
   AuthRequestHeaders,
   AuthSendRegisterEmailCodeRequestDto,
   AuthSendRegisterEmailCodeResponseDto,
+  AuthInvitationSourceScene,
+  AuthWorkspaceInvitationEmailBatchItemDto,
+  AuthWorkspaceInvitationEmailBatchRequestDto,
+  AuthWorkspaceInvitationEmailBatchResponseDto,
+  AuthWorkspaceInvitationEmailBatchResult,
+  AuthWorkspaceInvitationLinkCreateRequestDto,
+  AuthWorkspaceInvitationLinkDto,
+  AuthWorkspaceInvitationLinkStatus,
   AuthWorkspaceBootstrapOptionsDto,
   AuthWorkspaceDictionaryOptionDto,
   AuthSwitchWorkspaceRequestDto,
@@ -47,6 +59,8 @@ export type {
 const AUTH_BASE = '/auth';
 const AUTH_PUBLIC_BASE = `${AUTH_BASE}/public`;
 const AUTH_WORKSPACE_SESSION_BASE = `${AUTH_BASE}/workspace-session`;
+const AUTH_WORKSPACE_INVITATIONS_BASE = `${AUTH_BASE}/workspace-invitations`;
+const AUTH_WORKSPACE_INVITATION_LINKS_BASE = `${AUTH_BASE}/workspace-invitation-links`;
 
 const normalize204Response = <T>(data: T | '' | null | undefined): T | null => {
   if (data === '' || data == null) {
@@ -65,6 +79,16 @@ export const buildAuthHeaders = (authHeaders?: AuthRequestHeaders): Record<strin
 
   if (authHeaders?.workspaceTokenName && authHeaders.workspaceToken) {
     headers[authHeaders.workspaceTokenName] = authHeaders.workspaceToken;
+  }
+
+  return headers;
+};
+
+export const buildPlatformAuthHeaders = (authHeaders?: AuthRequestHeaders): Record<string, string> => {
+  const headers: Record<string, string> = {};
+
+  if (authHeaders?.platformTokenName && authHeaders.platformToken) {
+    headers[authHeaders.platformTokenName] = authHeaders.platformToken;
   }
 
   return headers;
@@ -99,19 +123,19 @@ export const authApi = {
 
   logout(authHeaders: AuthRequestHeaders): Promise<void> {
     return request.post(`${AUTH_BASE}/logout`, undefined, {
-      headers: buildAuthHeaders(authHeaders),
+      headers: buildPlatformAuthHeaders(authHeaders),
     }).then(() => undefined);
   },
 
   getMe(authHeaders: AuthRequestHeaders): Promise<AuthMeResponseDto> {
     return request.get(`${AUTH_BASE}/me`, {
-      headers: buildAuthHeaders(authHeaders),
+      headers: buildPlatformAuthHeaders(authHeaders),
     });
   },
 
   listWorkspaces(authHeaders: AuthRequestHeaders): Promise<AuthWorkspaceSummaryDto[]> {
     return request.get(`${AUTH_BASE}/workspaces`, {
-      headers: buildAuthHeaders(authHeaders),
+      headers: buildPlatformAuthHeaders(authHeaders),
     });
   },
 
@@ -120,7 +144,25 @@ export const authApi = {
     authHeaders: AuthRequestHeaders,
   ): Promise<AuthWorkspaceSessionDto> {
     return request.post(`${AUTH_BASE}/workspaces`, data, {
-      headers: buildAuthHeaders(authHeaders),
+      headers: buildPlatformAuthHeaders(authHeaders),
+    });
+  },
+
+  inviteWorkspaceMembersByEmail(
+    data: AuthWorkspaceInvitationEmailBatchRequestDto,
+    authHeaders: AuthRequestHeaders,
+  ): Promise<AuthWorkspaceInvitationEmailBatchResponseDto> {
+    return request.post(`${AUTH_WORKSPACE_INVITATIONS_BASE}/email-batch`, data, {
+      headers: buildPlatformAuthHeaders(authHeaders),
+    });
+  },
+
+  createWorkspaceInvitationLink(
+    data: AuthWorkspaceInvitationLinkCreateRequestDto,
+    authHeaders: AuthRequestHeaders,
+  ): Promise<AuthWorkspaceInvitationLinkDto> {
+    return request.post(`${AUTH_WORKSPACE_INVITATION_LINKS_BASE}`, data, {
+      headers: buildPlatformAuthHeaders(authHeaders),
     });
   },
 
@@ -129,19 +171,19 @@ export const authApi = {
     authHeaders: AuthRequestHeaders,
   ): Promise<AuthWorkspaceSessionDto> {
     return request.post(`${AUTH_WORKSPACE_SESSION_BASE}/switch`, data, {
-      headers: buildAuthHeaders(authHeaders),
+      headers: buildPlatformAuthHeaders(authHeaders),
     });
   },
 
   getCurrentWorkspaceSession(authHeaders: AuthRequestHeaders): Promise<AuthWorkspaceSessionDto | null> {
     return request.get(`${AUTH_WORKSPACE_SESSION_BASE}/current`, {
-      headers: buildAuthHeaders(authHeaders),
+      headers: buildPlatformAuthHeaders(authHeaders),
     }).then((response) => normalize204Response(response as unknown as AuthWorkspaceSessionDto | '' | null | undefined));
   },
 
   clearCurrentWorkspaceSession(authHeaders: AuthRequestHeaders): Promise<void> {
     return request.delete(`${AUTH_WORKSPACE_SESSION_BASE}/current`, {
-      headers: buildAuthHeaders(authHeaders),
+      headers: buildPlatformAuthHeaders(authHeaders),
     }).then(() => undefined);
   },
 };

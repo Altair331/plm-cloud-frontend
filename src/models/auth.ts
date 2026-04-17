@@ -8,6 +8,19 @@ export type AuthWorkspaceMemberStatus = OpenEndedUnion<'ACTIVE' | 'INACTIVE'>;
 
 export type AuthWorkspaceType = OpenEndedUnion<'TEAM' | 'PERSONAL' | 'LEARNING'>;
 
+export type AuthInvitationSourceScene = OpenEndedUnion<'WORKSPACE' | 'ONBOARDING'>;
+
+export type AuthWorkspaceInvitationEmailBatchResult = OpenEndedUnion<
+  | 'CREATED'
+  | 'INVALID_EMAIL'
+  | 'DUPLICATE_INPUT'
+  | 'SELF_SKIPPED'
+  | 'ALREADY_MEMBER'
+  | 'PENDING_EXISTS'
+>;
+
+export type AuthWorkspaceInvitationLinkStatus = OpenEndedUnion<'ACTIVE' | 'DISABLED' | 'EXPIRED'>;
+
 export type AuthErrorCode = OpenEndedUnion<
   | 'INVALID_ARGUMENT'
   | 'AUTH_NOT_LOGGED_IN'
@@ -23,10 +36,20 @@ export type AuthErrorCode = OpenEndedUnion<
   | 'EMAIL_VERIFICATION_DISABLED'
   | 'EMAIL_VERIFICATION_NOT_CONFIGURED'
   | 'USER_NOT_ACTIVE'
+  | 'WORKSPACE_PERMISSION_DENIED'
+  | 'WORKSPACE_ROLE_NOT_FOUND'
+  | 'WORKSPACE_ROLE_NOT_ACTIVE'
   | 'WORKSPACE_MEMBER_NOT_FOUND'
   | 'WORKSPACE_MEMBER_INACTIVE'
   | 'WORKSPACE_NOT_FOUND'
   | 'WORKSPACE_NOT_ACTIVE'
+  | 'INVITATION_EMAIL_MISMATCH'
+  | 'INVITATION_ACCEPT_EMAIL_REQUIRED'
+  | 'WORKSPACE_INVITATION_ALREADY_ACCEPTED'
+  | 'WORKSPACE_INVITATION_CANCELED'
+  | 'WORKSPACE_INVITATION_EXPIRED'
+  | 'WORKSPACE_INVITATION_LINK_DISABLED'
+  | 'WORKSPACE_INVITATION_LINK_EXPIRED'
   | 'GATEWAY_ROUTE_NOT_FOUND'
   | 'GATEWAY_DOWNSTREAM_UNAVAILABLE'
   | 'GATEWAY_INTERNAL_ERROR'
@@ -157,6 +180,50 @@ export interface AuthCreateWorkspaceRequestDto {
   defaultLocale: string;
   defaultTimezone: string;
   rememberAsDefault?: boolean;
+}
+
+export interface AuthWorkspaceInvitationEmailBatchRequestDto {
+  workspaceId: string;
+  emails: string[];
+  targetRoleCode?: string;
+  sourceScene?: AuthInvitationSourceScene;
+}
+
+export interface AuthWorkspaceInvitationEmailBatchItemDto {
+  email: string;
+  result: AuthWorkspaceInvitationEmailBatchResult;
+  invitationId: string | null;
+  message: string | null;
+}
+
+export interface AuthWorkspaceInvitationEmailBatchResponseDto {
+  workspaceId: string;
+  batchId: string;
+  successCount: number;
+  skippedCount: number;
+  results: AuthWorkspaceInvitationEmailBatchItemDto[];
+}
+
+export interface AuthWorkspaceInvitationLinkCreateRequestDto {
+  workspaceId: string;
+  sourceScene?: AuthInvitationSourceScene;
+  targetRoleCode?: string;
+  expiresInHours?: number;
+  maxUseCount?: number;
+}
+
+export interface AuthWorkspaceInvitationLinkDto {
+  linkId: string;
+  workspaceId: string;
+  workspaceName: string;
+  shareUrl: string;
+  sourceScene: AuthInvitationSourceScene;
+  targetRoleCode: string | null;
+  expiresAt: string | null;
+  usedCount: number;
+  maxUseCount: number | null;
+  status: AuthWorkspaceInvitationLinkStatus;
+  createdAt: string;
 }
 
 export interface AuthSwitchWorkspaceRequestDto {

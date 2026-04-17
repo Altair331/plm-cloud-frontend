@@ -25,8 +25,11 @@ import SchoolIcon from '@mui/icons-material/School';
 import { useRouter } from 'next/navigation';
 import { authApi, isAuthErrorResponse } from '@/services/auth';
 import type {
+  AuthWorkspaceInvitationEmailBatchResponseDto,
+  AuthWorkspaceInvitationLinkDto,
   AuthWorkspaceBootstrapOptionsDto,
   AuthWorkspaceDictionaryOptionDto,
+  AuthWorkspaceSessionDto,
   AuthWorkspaceType,
 } from '@/models/auth';
 import {
@@ -167,14 +170,41 @@ interface WorkspaceSetupFormValues {
   rememberAsDefault: boolean;
 }
 
+const parseInviteEmails = (rawValue: string): string[] => {
+  return rawValue
+    .split(/[\s,;，；]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+};
+
+const buildInviteResultMessage = (response: AuthWorkspaceInvitationEmailBatchResponseDto): string => {
+  if (response.successCount > 0 && response.skippedCount > 0) {
+    return `工作区已创建，成功发送 ${response.successCount} 条邀请，另有 ${response.skippedCount} 条被跳过。`;
+  }
+
+  if (response.successCount > 0) {
+    return `工作区已创建，已发送 ${response.successCount} 条邀请。`;
+  }
+
+  if (response.skippedCount > 0) {
+    return `工作区已创建，但本次邀请全部被跳过，请检查邮箱结果。`;
+  }
+
+  return '工作区已创建。';
+};
+
 const WorkspaceCreationOnboarding: React.FC = () => {
   const { token } = theme.useToken();
   const router = useRouter();
   const [currentStep, setCurrentStep] = useState(0);
   const [selectedType, setSelectedType] = useState<AuthWorkspaceType | null>(null);
+  const [workspaceSetup, setWorkspaceSetup] = useState<WorkspaceSetupFormValues | null>(null);
   const [bootstrapOptions, setBootstrapOptions] = useState<AuthWorkspaceBootstrapOptionsDto | null>(null);
   const [optionsLoading, setOptionsLoading] = useState(true);
   const [creatingWorkspace, setCreatingWorkspace] = useState(false);
+  const [copyingInviteLink, setCopyingInviteLink] = useState(false);
+  const [createdWorkspaceSession, setCreatedWorkspaceSession] = useState<AuthWorkspaceSessionDto | null>(null);
+  const [generatedInviteLink, setGeneratedInviteLink] = useState<AuthWorkspaceInvitationLinkDto | null>(null);
   const [setupForm] = Form.useForm<WorkspaceSetupFormValues>();
   const [inviteEmails, setInviteEmails] = useState('');
 
@@ -190,9 +220,26 @@ const WorkspaceCreationOnboarding: React.FC = () => {
       };
     }
 
-    authApi.getWorkspaceBootstrapOptions()
-      .then((response) => {
+    authApi.getMe(persistedHeaders)
+      .then((session) => {
         if (!active) {
+          return;
+        }
+
+        const currentSnapshot = readPersistedAuthSnapshot();
+        persistPlatformAuthState({
+          ...currentSnapshot.platformAuth,
+          user: session.user,
+        });
+
+        if (session.currentWorkspace) {
+          persistWorkspaceSessionState(mapWorkspaceSessionDtoToState(session.currentWorkspace));
+        }
+
+        return authApi.getWorkspaceBootstrapOptions();
+      })
+      .then((response) => {
+        if (!response || !active) {
           return;
         }
 
@@ -218,6 +265,12 @@ const WorkspaceCreationOnboarding: React.FC = () => {
         }
 
         if (isAuthErrorResponse(error)) {
+          if (error.code === 'AUTH_NOT_LOGGED_IN') {
+            message.error('登录态已失效，请重新登录。');
+            router.replace('/login');
+            return;
+          }
+
           message.error(error.message || '工作区引导选项加载失败，请稍后重试。');
           return;
         }
@@ -278,70 +331,161 @@ const WorkspaceCreationOnboarding: React.FC = () => {
   };
 
   const handleStep2Next = () => {
-    setupForm.validateFields().then(() => {
+    setupForm.validateFields().then((values) => {
+      setWorkspaceSetup(values);
       setCurrentStep(2);
     });
   };
 
-  const handleStep3Finish = async () => {
+  const syncPlatformUserSnapshot = async (workspaceSession: AuthWorkspaceSessionDto, persistedHeaders: ReturnType<typeof readPersistedAuthHeaders>) => {
+    const meHeaders = {
+      ...persistedHeaders,
+      workspaceToken: workspaceSession.workspaceToken,
+      workspaceTokenName: workspaceSession.workspaceTokenName,
+    };
+
+    try {
+      const me = await authApi.getMe(meHeaders);
+      const currentSnapshot = readPersistedAuthSnapshot();
+      persistPlatformAuthState({
+        ...currentSnapshot.platformAuth,
+        user: me.user,
+      });
+    } catch {
+      const currentSnapshot = readPersistedAuthSnapshot();
+      if (currentSnapshot.platformAuth.user) {
+        persistPlatformAuthState({
+          ...currentSnapshot.platformAuth,
+          user: {
+            ...currentSnapshot.platformAuth.user,
+            isFirstLogin: false,
+            workspaceCount: Math.max(1, currentSnapshot.platformAuth.user.workspaceCount),
+          },
+        });
+      }
+    }
+  };
+
+  const ensureWorkspaceCreated = async (): Promise<AuthWorkspaceSessionDto> => {
+    if (createdWorkspaceSession) {
+      return createdWorkspaceSession;
+    }
+
     if (!selectedType) {
       message.error('请先选择工作区类型。');
       setCurrentStep(0);
-      return;
+      throw new Error('WORKSPACE_TYPE_REQUIRED');
     }
 
     const persistedHeaders = readPersistedAuthHeaders();
     if (!persistedHeaders.platformToken || !persistedHeaders.platformTokenName) {
       message.error('登录态已失效，请重新登录。');
       router.replace('/login');
-      return;
+      throw new Error('AUTH_REQUIRED');
     }
 
-    const values = await setupForm.validateFields();
-    setCreatingWorkspace(true);
+    if (!workspaceSetup) {
+      message.error('请先完成工作区基本信息配置。');
+      setCurrentStep(1);
+      throw new Error('WORKSPACE_SETUP_REQUIRED');
+    }
+
+    const workspaceSession = await authApi.createWorkspace(
+      {
+        workspaceName: workspaceSetup.workspaceName.trim(),
+        workspaceType: selectedType,
+        defaultLocale: workspaceSetup.defaultLocale,
+        defaultTimezone: workspaceSetup.defaultTimezone,
+        rememberAsDefault: workspaceSetup.rememberAsDefault,
+      },
+      persistedHeaders,
+    );
+
+    setCreatedWorkspaceSession(workspaceSession);
+    persistWorkspaceSessionState(mapWorkspaceSessionDtoToState(workspaceSession));
+    await syncPlatformUserSnapshot(workspaceSession, persistedHeaders);
+
+    return workspaceSession;
+  };
+
+  const handleCopyInviteLink = async () => {
+    setCopyingInviteLink(true);
 
     try {
-      const createdWorkspace = await authApi.createWorkspace(
+      const workspaceSession = await ensureWorkspaceCreated();
+      const persistedHeaders = readPersistedAuthHeaders();
+
+      const inviteLink = await authApi.createWorkspaceInvitationLink(
         {
-          workspaceName: values.workspaceName.trim(),
-          workspaceType: selectedType,
-          defaultLocale: values.defaultLocale,
-          defaultTimezone: values.defaultTimezone,
-          rememberAsDefault: values.rememberAsDefault,
+          workspaceId: workspaceSession.workspaceId,
+          sourceScene: 'ONBOARDING',
         },
         persistedHeaders,
       );
 
-      persistWorkspaceSessionState(mapWorkspaceSessionDtoToState(createdWorkspace));
-
-      const meHeaders = {
-        ...persistedHeaders,
-        workspaceToken: createdWorkspace.workspaceToken,
-        workspaceTokenName: createdWorkspace.workspaceTokenName,
-      };
+      setGeneratedInviteLink(inviteLink);
 
       try {
-        const me = await authApi.getMe(meHeaders);
-        const currentSnapshot = readPersistedAuthSnapshot();
-        persistPlatformAuthState({
-          ...currentSnapshot.platformAuth,
-          user: me.user,
-        });
+        await navigator.clipboard.writeText(inviteLink.shareUrl);
+        message.success('邀请链接已复制到剪贴板。');
       } catch {
-        const currentSnapshot = readPersistedAuthSnapshot();
-        if (currentSnapshot.platformAuth.user) {
-          persistPlatformAuthState({
-            ...currentSnapshot.platformAuth,
-            user: {
-              ...currentSnapshot.platformAuth.user,
-              isFirstLogin: false,
-              workspaceCount: Math.max(1, currentSnapshot.platformAuth.user.workspaceCount),
-            },
-          });
+        message.success(`邀请链接已生成：${inviteLink.shareUrl}`);
+      }
+    } catch (error) {
+      if (isAuthErrorResponse(error)) {
+        if (error.code === 'AUTH_NOT_LOGGED_IN') {
+          message.error('登录态已失效，请重新登录。');
+          router.replace('/login');
+          return;
         }
+
+        message.error(error.message || '邀请链接生成失败，请稍后重试。');
+        return;
       }
 
-      message.success(inviteEmails.trim() ? '工作区已创建，邀请成员功能后续再接入。' : '工作区创建成功。');
+      if (error instanceof Error && (
+        error.message === 'WORKSPACE_TYPE_REQUIRED'
+        || error.message === 'AUTH_REQUIRED'
+        || error.message === 'WORKSPACE_SETUP_REQUIRED'
+      )) {
+        return;
+      }
+
+      message.error('邀请链接生成失败，请稍后重试。');
+    } finally {
+      setCopyingInviteLink(false);
+    }
+  };
+
+  const handleStep3Finish = async () => {
+    setCreatingWorkspace(true);
+
+    try {
+      const workspaceSession = await ensureWorkspaceCreated();
+      const inviteEmailList = parseInviteEmails(inviteEmails);
+
+      if (inviteEmailList.length > 0) {
+        const persistedHeaders = readPersistedAuthHeaders();
+        const inviteResult = await authApi.inviteWorkspaceMembersByEmail(
+          {
+            workspaceId: workspaceSession.workspaceId,
+            emails: inviteEmailList,
+            sourceScene: 'ONBOARDING',
+          },
+          persistedHeaders,
+        );
+
+        if (inviteResult.successCount > 0) {
+          message.success(buildInviteResultMessage(inviteResult));
+        } else if (inviteResult.skippedCount > 0) {
+          message.warning(buildInviteResultMessage(inviteResult));
+        } else {
+          message.success('工作区创建成功。');
+        }
+      } else {
+        message.success(generatedInviteLink ? '工作区已创建，邀请链接可直接分享。' : '工作区创建成功。');
+      }
+
       router.push('/dashboard');
     } catch (error) {
       if (isAuthErrorResponse(error)) {
@@ -351,11 +495,19 @@ const WorkspaceCreationOnboarding: React.FC = () => {
           return;
         }
 
-        message.error(error.message || '工作区创建失败，请稍后重试。');
+        message.error(error.message || '工作区创建或邀请发送失败，请稍后重试。');
         return;
       }
 
-      message.error('工作区创建失败，请稍后重试。');
+      if (error instanceof Error && (
+        error.message === 'WORKSPACE_TYPE_REQUIRED'
+        || error.message === 'AUTH_REQUIRED'
+        || error.message === 'WORKSPACE_SETUP_REQUIRED'
+      )) {
+        return;
+      }
+
+      message.error('工作区创建或邀请发送失败，请稍后重试。');
     } finally {
       setCreatingWorkspace(false);
     }
@@ -528,9 +680,17 @@ const WorkspaceCreationOnboarding: React.FC = () => {
         type="link"
         icon={<LinkOutlined />}
         style={{ paddingInline: 0, alignSelf: 'flex-start', color: token.colorPrimary }}
+        loading={copyingInviteLink}
+        onClick={() => void handleCopyInviteLink()}
       >
         拷贝邀请链接
       </Button>
+
+      {generatedInviteLink ? (
+        <Text style={{ color: token.colorTextTertiary, fontSize: 12 }}>
+          当前邀请链接已生成，可直接分享给团队成员。
+        </Text>
+      ) : null}
 
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginTop: 8 }}>
         <Button size="large" onClick={handleBack}>
@@ -544,7 +704,7 @@ const WorkspaceCreationOnboarding: React.FC = () => {
           loading={creatingWorkspace}
           onClick={handleStep3Finish}
         >
-          创建工作区
+          {createdWorkspaceSession ? '完成并进入工作区' : '创建工作区'}
         </Button>
       </div>
     </div>

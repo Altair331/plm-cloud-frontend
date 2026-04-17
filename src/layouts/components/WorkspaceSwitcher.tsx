@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { App, Avatar, Button, Divider, Empty, Flex, Popover, Space, Spin, Switch, Typography } from 'antd';
+import { App, Avatar, Button, Divider, Empty, Flex, Input, Modal, Popover, Space, Spin, Switch, Typography } from 'antd';
 import {
   ApartmentOutlined,
   CheckOutlined,
   DownOutlined,
+  LinkOutlined,
   PlusOutlined,
   SettingOutlined,
   TeamOutlined,
@@ -12,7 +13,7 @@ import {
 import { useRouter } from 'next/navigation';
 import type { AppPalette } from '@/styles/colors';
 import { authApi, isAuthErrorResponse } from '@/services/auth';
-import type { AuthWorkspaceSummaryDto } from '@/models/auth';
+import type { AuthWorkspaceInvitationEmailBatchResponseDto, AuthWorkspaceInvitationLinkDto, AuthWorkspaceSummaryDto } from '@/models/auth';
 import {
   mapWorkspaceSessionDtoToState,
   persistWorkspaceSessionState,
@@ -23,6 +24,29 @@ import {
 interface WorkspaceSwitcherProps {
   palette: AppPalette;
 }
+
+const parseInviteEmails = (rawValue: string): string[] => {
+  return rawValue
+    .split(/[\s,;，；]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+};
+
+const buildInviteSummary = (response: AuthWorkspaceInvitationEmailBatchResponseDto): string => {
+  if (response.successCount > 0 && response.skippedCount > 0) {
+    return `已发送 ${response.successCount} 条邀请，另有 ${response.skippedCount} 条被跳过。`;
+  }
+
+  if (response.successCount > 0) {
+    return `已发送 ${response.successCount} 条邀请。`;
+  }
+
+  if (response.skippedCount > 0) {
+    return `本次邀请均被跳过，请检查结果。`;
+  }
+
+  return '邀请请求已处理。';
+};
 
 const formatWorkspaceMeta = (workspace: AuthWorkspaceSummaryDto): string => {
   return [workspace.workspaceType, workspace.defaultLocale, workspace.defaultTimezone]
@@ -61,8 +85,15 @@ const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({ palette }) => {
   const [switchingWorkspaceId, setSwitchingWorkspaceId] = useState<string | null>(null);
   const [workspaceOptions, setWorkspaceOptions] = useState<AuthWorkspaceSummaryDto[]>([]);
   const [currentWorkspaceId, setCurrentWorkspaceId] = useState<string | null>(initialSnapshot.workspaceSession.workspaceId);
+  const [accountDisplayName, setAccountDisplayName] = useState(initialSnapshot.platformAuth.user?.displayName ?? '未登录用户');
   const [accountEmail, setAccountEmail] = useState(initialSnapshot.platformAuth.user?.email ?? null);
   const [newSidebarEnabled, setNewSidebarEnabled] = useState(false);
+  const [inviteModalOpen, setInviteModalOpen] = useState(false);
+  const [inviteEmails, setInviteEmails] = useState('');
+  const [inviting, setInviting] = useState(false);
+  const [creatingInviteLink, setCreatingInviteLink] = useState(false);
+  const [inviteLink, setInviteLink] = useState<AuthWorkspaceInvitationLinkDto | null>(null);
+  const [inviteSummary, setInviteSummary] = useState<string | null>(null);
 
   useEffect(() => {
     const persistedHeaders = readPersistedAuthHeaders();
@@ -80,6 +111,7 @@ const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({ palette }) => {
         }
 
         setWorkspaceOptions(response.workspaceOptions);
+  setAccountDisplayName(response.user.displayName);
         setAccountEmail(response.user.email);
 
         if (response.currentWorkspace) {
@@ -116,6 +148,26 @@ const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({ palette }) => {
 
   const triggerActive = open || hovered;
   const workspaceInitial = currentWorkspace?.workspaceName.trim().charAt(0).toUpperCase() || 'W';
+
+  const resetInviteState = () => {
+    setInviteEmails('');
+    setInviteSummary(null);
+    setInviteLink(null);
+  };
+
+  const handleInviteModalClose = () => {
+    setInviteModalOpen(false);
+    resetInviteState();
+  };
+
+  const handleOpenInviteModal = () => {
+    if (!currentWorkspace?.workspaceId) {
+      message.warning('请先选择一个可用工作区。');
+      return;
+    }
+
+    setInviteModalOpen(true);
+  };
 
   const handleWorkspaceSwitch = async (workspaceId: string) => {
     if (!workspaceId || workspaceId === currentWorkspace?.workspaceId) {
@@ -155,6 +207,113 @@ const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({ palette }) => {
       message.error('工作区切换失败，请稍后重试。');
     } finally {
       setSwitchingWorkspaceId(null);
+    }
+  };
+
+  const handleSendInvites = async () => {
+    if (!currentWorkspace?.workspaceId) {
+      message.warning('当前没有可邀请的工作区。');
+      return;
+    }
+
+    const emails = parseInviteEmails(inviteEmails);
+    if (emails.length === 0) {
+      message.warning('请输入至少一个邀请邮箱。');
+      return;
+    }
+
+    const persistedHeaders = readPersistedAuthHeaders();
+    if (!persistedHeaders.platformToken || !persistedHeaders.platformTokenName) {
+      message.error('登录态已失效，请重新登录。');
+      router.push('/login');
+      return;
+    }
+
+    setInviting(true);
+
+    try {
+      const response = await authApi.inviteWorkspaceMembersByEmail(
+        {
+          workspaceId: currentWorkspace.workspaceId,
+          emails,
+          sourceScene: 'WORKSPACE',
+        },
+        persistedHeaders,
+      );
+
+      const summary = buildInviteSummary(response);
+      setInviteSummary(summary);
+
+      if (response.successCount > 0) {
+        message.success(summary);
+      } else {
+        message.warning(summary);
+      }
+    } catch (error) {
+      if (isAuthErrorResponse(error)) {
+        if (error.code === 'AUTH_NOT_LOGGED_IN') {
+          message.error('登录态已失效，请重新登录。');
+          router.push('/login');
+          return;
+        }
+
+        message.error(error.message || '发送邀请失败，请稍后重试。');
+        return;
+      }
+
+      message.error('发送邀请失败，请稍后重试。');
+    } finally {
+      setInviting(false);
+    }
+  };
+
+  const handleCreateInviteLink = async () => {
+    if (!currentWorkspace?.workspaceId) {
+      message.warning('当前没有可邀请的工作区。');
+      return;
+    }
+
+    const persistedHeaders = readPersistedAuthHeaders();
+    if (!persistedHeaders.platformToken || !persistedHeaders.platformTokenName) {
+      message.error('登录态已失效，请重新登录。');
+      router.push('/login');
+      return;
+    }
+
+    setCreatingInviteLink(true);
+
+    try {
+      const response = await authApi.createWorkspaceInvitationLink(
+        {
+          workspaceId: currentWorkspace.workspaceId,
+          sourceScene: 'WORKSPACE',
+        },
+        persistedHeaders,
+      );
+
+      setInviteLink(response);
+
+      try {
+        await navigator.clipboard.writeText(response.shareUrl);
+        message.success('邀请链接已复制到剪贴板。');
+      } catch {
+        message.success('邀请链接已生成。');
+      }
+    } catch (error) {
+      if (isAuthErrorResponse(error)) {
+        if (error.code === 'AUTH_NOT_LOGGED_IN') {
+          message.error('登录态已失效，请重新登录。');
+          router.push('/login');
+          return;
+        }
+
+        message.error(error.message || '生成邀请链接失败，请稍后重试。');
+        return;
+      }
+
+      message.error('生成邀请链接失败，请稍后重试。');
+    } finally {
+      setCreatingInviteLink(false);
     }
   };
 
@@ -210,6 +369,7 @@ const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({ palette }) => {
               size="small"
               style={{ borderRadius: 10 }}
               icon={<TeamOutlined />}
+              onClick={handleOpenInviteModal}
             >
               邀请成员
             </Button>
@@ -223,9 +383,14 @@ const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({ palette }) => {
         </div>
 
         <div style={{ padding: '0 12px 10px' }}>
-          <Typography.Text style={{ color: palette.textPrimary }}>
-            {accountEmail || '未登录账号'}
-          </Typography.Text>
+          <Space direction="vertical" size={0} style={{ width: '100%' }}>
+            <Typography.Text style={{ color: palette.textPrimary }}>
+              {accountDisplayName}
+            </Typography.Text>
+            <Typography.Text style={{ color: palette.textSecondary, fontSize: 12 }}>
+              {accountEmail || '未登录账号'}
+            </Typography.Text>
+          </Space>
         </div>
 
         <div style={{ padding: '0 8px 8px' }}>
@@ -355,84 +520,145 @@ const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({ palette }) => {
   );
 
   return (
-    <Popover
-      trigger="click"
-      open={open}
-      onOpenChange={setOpen}
-      placement="bottomLeft"
-      arrow={false}
-      content={popoverContent}
-      styles={{
-        root: { paddingTop: 0 },
-        container: {
-          padding: 0,
-          borderRadius: 20,
-          background: palette.bgContainer,
-          border: `1px solid ${palette.borderColor}`,
-          boxShadow:
-            palette.mode === 'dark'
-              ? '0 24px 64px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.04)'
-              : '0 28px 60px rgba(15, 24, 40, 0.16), 0 8px 20px rgba(15, 24, 40, 0.08)',
-          overflow: 'hidden',
-        },
-      }}
-    >
-      <button
-        type="button"
-        onMouseEnter={() => setHovered(true)}
-        onMouseLeave={() => setHovered(false)}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: 10,
-          padding: '6px 16px 6px 8px',
-          minHeight: 40,
-          borderRadius: 999,
-          border: 'none',
-          background: triggerActive
-            ? palette.mode === 'dark'
-              ? 'rgba(255, 255, 255, 0.06)'
-              : 'rgba(15, 24, 40, 0.06)'
-            : 'transparent',
-          color: palette.textPrimary,
-          cursor: 'pointer',
-          boxShadow: 'none',
-          transition: 'background-color 0.18s ease',
+    <>
+      <Popover
+        trigger="click"
+        open={open}
+        onOpenChange={setOpen}
+        placement="bottomLeft"
+        arrow={false}
+        content={popoverContent}
+        styles={{
+          root: { paddingTop: 0 },
+          container: {
+            padding: 0,
+            borderRadius: 20,
+            background: palette.bgContainer,
+            border: `1px solid ${palette.borderColor}`,
+            boxShadow:
+              palette.mode === 'dark'
+                ? '0 24px 64px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.04)'
+                : '0 28px 60px rgba(15, 24, 40, 0.16), 0 8px 20px rgba(15, 24, 40, 0.08)',
+            overflow: 'hidden',
+          },
         }}
       >
-        <Avatar
-          shape="square"
-          size={24}
+        <button
+          type="button"
+          onMouseEnter={() => setHovered(true)}
+          onMouseLeave={() => setHovered(false)}
           style={{
-            background: palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(15, 24, 40, 0.08)',
-            color: palette.textSecondary,
-            borderRadius: 7,
-            fontSize: 13,
-            fontWeight: 600,
-            flex: '0 0 auto',
-          }}
-        >
-          {workspaceInitial}
-        </Avatar>
-        <Typography.Text
-          strong
-          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 10,
+            padding: '6px 16px 6px 8px',
+            minHeight: 40,
+            borderRadius: 999,
+            border: 'none',
+            background: triggerActive
+              ? palette.mode === 'dark'
+                ? 'rgba(255, 255, 255, 0.06)'
+                : 'rgba(15, 24, 40, 0.06)'
+              : 'transparent',
             color: palette.textPrimary,
-            fontSize: 13,
-            maxWidth: 220,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-            lineHeight: 1.1,
-            margin: 0,
+            cursor: 'pointer',
+            boxShadow: 'none',
+            transition: 'background-color 0.18s ease',
           }}
         >
-            {currentWorkspace?.workspaceName ?? '选择工作区'}
-        </Typography.Text>
-        <DownOutlined style={{ color: palette.iconColor, fontSize: 10, flex: '0 0 auto' }} />
-      </button>
-    </Popover>
+          <Avatar
+            shape="square"
+            size={24}
+            style={{
+              background: palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(15, 24, 40, 0.08)',
+              color: palette.textSecondary,
+              borderRadius: 7,
+              fontSize: 13,
+              fontWeight: 600,
+              flex: '0 0 auto',
+            }}
+          >
+            {workspaceInitial}
+          </Avatar>
+          <Typography.Text
+            strong
+            style={{
+              color: palette.textPrimary,
+              fontSize: 13,
+              maxWidth: 220,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              lineHeight: 1.1,
+              margin: 0,
+            }}
+          >
+              {currentWorkspace?.workspaceName ?? '选择工作区'}
+          </Typography.Text>
+          <DownOutlined style={{ color: palette.iconColor, fontSize: 10, flex: '0 0 auto' }} />
+        </button>
+      </Popover>
+      <Modal
+        open={inviteModalOpen}
+        title="邀请成员"
+        onCancel={handleInviteModalClose}
+        footer={[
+          <Button key="cancel" onClick={handleInviteModalClose}>
+            关闭
+          </Button>,
+          <Button key="link" icon={<LinkOutlined />} loading={creatingInviteLink} onClick={() => void handleCreateInviteLink()}>
+            生成邀请链接
+          </Button>,
+          <Button key="invite" type="primary" loading={inviting} onClick={() => void handleSendInvites()}>
+            发送邮件邀请
+          </Button>,
+        ]}
+      >
+        <Space direction="vertical" size={16} style={{ width: '100%' }}>
+          <div>
+            <Typography.Text strong style={{ color: palette.textPrimary, display: 'block' }}>
+              {currentWorkspace?.workspaceName ?? '当前工作区'}
+            </Typography.Text>
+            <Typography.Text style={{ color: palette.textSecondary, fontSize: 12 }}>
+              输入一个或多个邮箱，使用当前工作区权限发起邀请。
+            </Typography.Text>
+          </div>
+
+          <Input.TextArea
+            rows={5}
+            value={inviteEmails}
+            onChange={(event) => setInviteEmails(event.target.value)}
+            placeholder="alice@example.com, bob@example.com"
+            style={{ resize: 'none' }}
+          />
+
+          {inviteSummary ? (
+            <Typography.Text style={{ color: palette.textSecondary }}>
+              {inviteSummary}
+            </Typography.Text>
+          ) : null}
+
+          {inviteLink ? (
+            <div
+              style={{
+                padding: 12,
+                borderRadius: 12,
+                border: `1px solid ${palette.borderColor}`,
+                background: palette.mode === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(15,24,40,0.03)',
+              }}
+            >
+              <Typography.Text strong style={{ color: palette.textPrimary, display: 'block' }}>
+                邀请链接
+              </Typography.Text>
+              <Typography.Text copyable={{ text: inviteLink.shareUrl }} style={{ color: palette.textSecondary, fontSize: 12 }}>
+                {inviteLink.shareUrl}
+              </Typography.Text>
+            </div>
+          ) : null}
+        </Space>
+      </Modal>
+    </>
   );
 };
 

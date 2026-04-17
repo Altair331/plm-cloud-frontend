@@ -1,6 +1,6 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import type { MenuProps } from 'antd';
-import { Dropdown, Avatar, Typography, Space, Input, Badge, Button, Tooltip } from 'antd';
+import { App, Dropdown, Avatar, Typography, Space, Input, Badge, Button, Tooltip } from 'antd';
 import {
   UserOutlined,
   SettingOutlined,
@@ -12,7 +12,11 @@ import {
   BellOutlined,
   SearchOutlined,
 } from '@ant-design/icons';
+import { useRouter } from 'next/navigation';
 import type { AppPalette } from '@/styles/colors';
+import { authApi, isAuthErrorResponse } from '@/services/auth';
+import { clearPersistedAuthState, persistPlatformAuthState, persistWorkspaceSessionState, readPersistedAuthHeaders, readPersistedAuthSnapshot } from '@/utils/authStorage';
+import type { AuthUserSummaryDto } from '@/models/auth';
 
 interface HeaderRightProps {
   isDarkMode: boolean;
@@ -21,12 +25,50 @@ interface HeaderRightProps {
 }
 
 const HeaderRight: React.FC<HeaderRightProps> = ({ isDarkMode, onToggleTheme, palette }) => {
+  const { message } = App.useApp();
+  const router = useRouter();
+  const initialSnapshot = useMemo(() => readPersistedAuthSnapshot(), []);
+  const [user, setUser] = useState<AuthUserSummaryDto | null>(initialSnapshot.platformAuth.user);
+  const [logoutLoading, setLogoutLoading] = useState(false);
+
+  useEffect(() => {
+    const persistedHeaders = readPersistedAuthHeaders();
+    if (!persistedHeaders.platformToken || !persistedHeaders.platformTokenName) {
+      return;
+    }
+
+    let active = true;
+
+    authApi.getMe(persistedHeaders)
+      .then((response) => {
+        if (!active) {
+          return;
+        }
+
+        setUser(response.user);
+        const snapshot = readPersistedAuthSnapshot();
+        persistPlatformAuthState({
+          ...snapshot.platformAuth,
+          user: response.user,
+        });
+      })
+      .catch(() => {
+        if (active) {
+          setUser(initialSnapshot.platformAuth.user);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [initialSnapshot.platformAuth.user]);
+
   const menuItems = useMemo<MenuProps['items']>(
     () => [
       {
         key: 'profile-group',
         type: 'group',
-        label: '配置个人信息',
+        label: user?.displayName || '当前账号',
         children: [
           {
             key: 'profile-email',
@@ -34,7 +76,7 @@ const HeaderRight: React.FC<HeaderRightProps> = ({ isDarkMode, onToggleTheme, pa
               <Space size={4}>
                 <FileTextOutlined />
                 <Typography.Text style={{ color: palette.textSecondary }}>
-                  1755529573@qq.com
+                  {user?.email || '未绑定邮箱'}
                 </Typography.Text>
               </Space>
             ),
@@ -69,12 +111,41 @@ const HeaderRight: React.FC<HeaderRightProps> = ({ isDarkMode, onToggleTheme, pa
       { type: 'divider', key: 'divider-2' },
       { key: 'logout', label: '退出登录', icon: <LogoutOutlined /> },
     ],
-    [isDarkMode, palette]
+    [isDarkMode, palette, user]
   );
+
+  const handleLogout = async () => {
+    const persistedHeaders = readPersistedAuthHeaders();
+    setLogoutLoading(true);
+
+    try {
+      if (persistedHeaders.platformToken && persistedHeaders.platformTokenName) {
+        await authApi.logout(persistedHeaders);
+      }
+    } catch (error) {
+      if (isAuthErrorResponse(error) && error.code !== 'AUTH_NOT_LOGGED_IN') {
+        message.error(error.message || '退出登录失败，请稍后重试。');
+        setLogoutLoading(false);
+        return;
+      }
+    }
+
+    clearPersistedAuthState();
+    persistWorkspaceSessionState(null);
+    message.success('已退出登录。');
+    router.push('/login');
+    router.refresh();
+    setLogoutLoading(false);
+  };
 
   const handleMenuClick: MenuProps['onClick'] = ({ key }) => {
     if (key === 'theme') {
       onToggleTheme();
+      return;
+    }
+
+    if (key === 'logout') {
+      void handleLogout();
     }
   };
 
@@ -128,7 +199,7 @@ const HeaderRight: React.FC<HeaderRightProps> = ({ isDarkMode, onToggleTheme, pa
         >
           <Avatar size={28} icon={<UserOutlined />} />
           <Typography.Text strong style={{ color: palette.textPrimary }}>
-            用户信息站位
+            {user?.displayName || '当前账号'}
           </Typography.Text>
           <SettingOutlined style={{ color: palette.iconColor }} />
         </div>
