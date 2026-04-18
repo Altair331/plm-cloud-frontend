@@ -9,6 +9,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { authApi, isAuthErrorResponse } from '@/services/auth';
 import { mapWorkspaceSessionDtoToState, persistPlatformAuthState, persistWorkspaceSessionState } from '@/utils/authStorage';
+import { encryptPasswordWithPublicKey } from '@/utils/passwordEncryption';
 
 const { Title, Text } = Typography;
 
@@ -19,6 +20,10 @@ interface LoginFormValuesStep2 extends LoginFormValuesStep1 {
   password: string;
   remember?: boolean;
 }
+
+const navigateAfterLogin = (targetPath: '/dashboard' | '/workspace/create') => {
+  window.location.assign(targetPath);
+};
 
 export default function LoginPage() {
   const [stepOneForm] = Form.useForm<LoginFormValuesStep1>();
@@ -50,12 +55,21 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
+      const encryptionKey = await authApi.getPasswordEncryptionKey();
+      const passwordCiphertext = await encryptPasswordWithPublicKey(
+        values.password,
+        encryptionKey.publicKeyBase64 || encryptionKey.publicKeyPem || '',
+        encryptionKey.transformation,
+      );
+
       const response = await authApi.loginWithPassword({
         identifier: plmIdCache,
-        password: values.password,
+        passwordCiphertext,
+        encryptionKeyId: encryptionKey.keyId,
+        remember: values.remember !== false,
       });
 
-      const remember = values.remember !== false;
+      const remember = response.remember;
       const loginHeaders = {
         platformToken: response.platformToken,
         platformTokenName: response.platformTokenName,
@@ -65,6 +79,8 @@ export default function LoginPage() {
         {
           platformToken: response.platformToken,
           platformTokenName: response.platformTokenName,
+          remember: response.remember,
+          platformTokenExpireInSeconds: response.platformTokenExpireInSeconds,
           user: response.user,
         },
         {
@@ -107,7 +123,7 @@ export default function LoginPage() {
 
       if (shouldCreateWorkspace) {
         message.success(response.user.isFirstLogin ? '登录成功，请先创建第一个工作区。' : '登录成功，当前没有可用工作区，请创建新的工作区。');
-        router.push('/workspace/create');
+        navigateAfterLogin('/workspace/create');
         return;
       }
 
@@ -117,7 +133,7 @@ export default function LoginPage() {
         message.warning('登录成功，但工作区会话尚未恢复，请在工作区菜单中手动切换或新建工作区。');
       }
 
-      router.push('/dashboard');
+      navigateAfterLogin('/dashboard');
     } catch (error) {
       if (isAuthErrorResponse(error)) {
         if (error.code === 'AUTH_INVALID_CREDENTIALS') {
@@ -131,7 +147,7 @@ export default function LoginPage() {
         }
 
         if (error.code === 'INVALID_ARGUMENT') {
-          message.error(error.message || '请输入完整的登录信息');
+          message.error(error.message || '登录信息无效或登录加密已过期，请重试');
           return;
         }
 

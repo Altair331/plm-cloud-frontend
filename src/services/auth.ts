@@ -6,6 +6,7 @@ import type {
   AuthLoginResponseDto,
   AuthMeResponseDto,
   AuthPasswordLoginRequestDto,
+  AuthPasswordEncryptionKeyDto,
   AuthRegisterRequestDto,
   AuthRegisterResponseDto,
   AuthRequestHeaders,
@@ -30,6 +31,7 @@ export type {
   AuthLoginResponseDto,
   AuthMeResponseDto,
   AuthPasswordLoginRequestDto,
+  AuthPasswordEncryptionKeyDto,
   AuthRegisterRequestDto,
   AuthRegisterResponseDto,
   AuthRequestHeaders,
@@ -105,6 +107,10 @@ export const isAuthErrorResponse = (error: unknown): error is AuthErrorResponseD
 export const authApi = {
   getWorkspaceBootstrapOptions(): Promise<AuthWorkspaceBootstrapOptionsDto> {
     return request.get(`${AUTH_PUBLIC_BASE}/workspace-bootstrap-options`);
+  },
+
+  getPasswordEncryptionKey(): Promise<AuthPasswordEncryptionKeyDto> {
+    return request.get(`${AUTH_PUBLIC_BASE}/security/password-encryption-key`);
   },
 
   sendRegisterEmailCode(

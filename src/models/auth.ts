@@ -134,11 +134,21 @@ export interface AuthSendRegisterEmailCodeResponseDto {
   resendCooldownSeconds: number;
 }
 
+export interface AuthPasswordEncryptionKeyDto {
+  keyId: string;
+  algorithm: string;
+  transformation: string;
+  publicKeyBase64: string;
+  publicKeyPem?: string;
+  plaintextFallbackAllowed: boolean;
+}
+
 export interface AuthRegisterRequestDto {
   username: string;
   displayName: string;
-  password: string;
-  confirmPassword: string;
+  passwordCiphertext: string;
+  confirmPasswordCiphertext: string;
+  encryptionKeyId: string;
   email: string;
   emailVerificationCode: string;
   phone?: string | null;
@@ -153,12 +163,16 @@ export interface AuthRegisterResponseDto {
 
 export interface AuthPasswordLoginRequestDto {
   identifier: string;
-  password: string;
+  passwordCiphertext: string;
+  encryptionKeyId: string;
+  remember?: boolean;
 }
 
 export interface AuthLoginResponseDto {
   platformToken: string;
   platformTokenName: string;
+  remember: boolean;
+  platformTokenExpireInSeconds: number;
   user: AuthUserSummaryDto;
   defaultWorkspace: AuthWorkspaceSummaryDto | null;
   workspaceOptions: AuthWorkspaceSummaryDto[];
@@ -234,6 +248,8 @@ export interface AuthSwitchWorkspaceRequestDto {
 export interface PlatformAuthState {
   platformToken: string | null;
   platformTokenName: string | null;
+  remember: boolean;
+  platformTokenExpireInSeconds: number | null;
   user: AuthUserSummaryDto | null;
 }
 
@@ -253,6 +269,8 @@ export interface WorkspaceSessionState {
 export const createEmptyPlatformAuthState = (): PlatformAuthState => ({
   platformToken: null,
   platformTokenName: null,
+  remember: false,
+  platformTokenExpireInSeconds: null,
   user: null,
 });
 

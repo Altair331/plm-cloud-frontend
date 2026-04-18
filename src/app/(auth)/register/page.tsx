@@ -7,6 +7,7 @@ import { evaluatePassword } from '@/utils/passwordRules';
 import { authApi, isAuthErrorResponse } from '@/services/auth';
 import type { AuthSendRegisterEmailCodeResponseDto } from '@/models/auth';
 import { useRouter } from 'next/navigation';
+import { encryptPasswordWithPublicKey } from '@/utils/passwordEncryption';
 import URXBgSvg from '@/assets/URX-bg.svg';
 import Image from 'next/image';
 import NextLink from 'next/link';
@@ -187,12 +188,25 @@ const RegisterPage: React.FC = () => {
     setVerificationCodeError(null);
 
     try {
+      const encryptionKey = await authApi.getPasswordEncryptionKey();
+      const passwordCiphertext = await encryptPasswordWithPublicKey(
+        values.password,
+        encryptionKey.publicKeyBase64 || encryptionKey.publicKeyPem || '',
+        encryptionKey.transformation,
+      );
+      const confirmPasswordCiphertext = await encryptPasswordWithPublicKey(
+        values.confirmPassword,
+        encryptionKey.publicKeyBase64 || encryptionKey.publicKeyPem || '',
+        encryptionKey.transformation,
+      );
+
       const response = await authApi.registerAccount({
         username: values.username.trim(),
         displayName: values.displayName.trim(),
         email: values.email,
-        password: values.password,
-        confirmPassword: values.confirmPassword,
+        passwordCiphertext,
+        confirmPasswordCiphertext,
+        encryptionKeyId: encryptionKey.keyId,
         emailVerificationCode: sanitizedVerificationCode,
         phone: values.phone?.trim() || null,
       });
