@@ -49,3 +49,11 @@
   vertical-align: top;
   border-radius: 999px;
 }
+
+.ant-menu-inline-collapsed .workspace-sidebar-skeleton-item {
+  justify-content: center;
+}
+
+.ant-menu-inline-collapsed .workspace-sidebar-skeleton-line-shell {
+  display: none !important;
+}

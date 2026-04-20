@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { App, Avatar, Button, Divider, Empty, Flex, Input, Modal, Popover, Space, Spin, Switch, Typography } from 'antd';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { App, Avatar, Button, Divider, Empty, Flex, Input, Modal, Popover, Space, Switch, Typography } from 'antd';
 import {
   ApartmentOutlined,
   CheckOutlined,
@@ -10,6 +10,7 @@ import {
   TeamOutlined,
   UserSwitchOutlined,
 } from '@ant-design/icons';
+import CircularProgress from '@mui/material/CircularProgress';
 import { useRouter } from 'next/navigation';
 import type { AppPalette } from '@/styles/colors';
 import { authApi, isAuthErrorResponse } from '@/services/auth';
@@ -20,6 +21,7 @@ import {
   readPersistedAuthHeaders,
   readPersistedAuthSnapshot,
 } from '@/utils/authStorage';
+import { useGlobalLoading } from '@/components/providers/GlobalLoadingProvider';
 
 interface WorkspaceSwitcherProps {
   palette: AppPalette;
@@ -77,8 +79,11 @@ const createSnapshotWorkspaceSummary = (): AuthWorkspaceSummaryDto | null => {
 const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({ palette }) => {
   const { message } = App.useApp();
   const router = useRouter();
+  const { showLoading, hideLoading } = useGlobalLoading();
   const initialSnapshot = useMemo(() => readPersistedAuthSnapshot(), []);
   const snapshotWorkspace = useMemo(() => createSnapshotWorkspaceSummary(), []);
+  const pendingSwitchLoadingIdRef = useRef<number | null>(null);
+  const switchLoadingTimerRef = useRef<number | null>(null);
   const [open, setOpen] = useState(false);
   const [hovered, setHovered] = useState(false);
   const [loading, setLoading] = useState(Boolean(initialSnapshot.platformAuth.platformToken));
@@ -138,6 +143,19 @@ const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({ palette }) => {
     };
   }, [snapshotWorkspace]);
 
+  useEffect(() => {
+    return () => {
+      if (switchLoadingTimerRef.current != null) {
+        window.clearTimeout(switchLoadingTimerRef.current);
+      }
+
+      if (pendingSwitchLoadingIdRef.current != null) {
+        hideLoading(pendingSwitchLoadingIdRef.current);
+        pendingSwitchLoadingIdRef.current = null;
+      }
+    };
+  }, [hideLoading]);
+
   const currentWorkspace = useMemo(
     () => workspaceOptions.find((item) => item.workspaceId === currentWorkspaceId)
       ?? snapshotWorkspace
@@ -183,6 +201,8 @@ const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({ palette }) => {
     }
 
     setSwitchingWorkspaceId(workspaceId);
+    const loadingId = showLoading('正在切换工作区...');
+    pendingSwitchLoadingIdRef.current = loadingId;
 
     try {
       const response = await authApi.switchWorkspace(
@@ -198,7 +218,14 @@ const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({ palette }) => {
       setOpen(false);
       message.success(`已切换到 ${response.workspaceName}`);
       router.refresh();
+      switchLoadingTimerRef.current = window.setTimeout(() => {
+        hideLoading(loadingId);
+        pendingSwitchLoadingIdRef.current = null;
+        switchLoadingTimerRef.current = null;
+      }, 420);
     } catch (error) {
+      hideLoading(loadingId);
+      pendingSwitchLoadingIdRef.current = null;
       if (isAuthErrorResponse(error)) {
         message.error(error.message || '工作区切换失败，请稍后重试。');
         return;
@@ -383,7 +410,7 @@ const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({ palette }) => {
         </div>
 
         <div style={{ padding: '0 12px 10px' }}>
-          <Space direction="vertical" size={0} style={{ width: '100%' }}>
+          <Space orientation="vertical" size={0} style={{ width: '100%' }}>
             <Typography.Text style={{ color: palette.textPrimary }}>
               {accountDisplayName}
             </Typography.Text>
@@ -396,7 +423,7 @@ const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({ palette }) => {
         <div style={{ padding: '0 8px 8px' }}>
           {loading ? (
             <div style={{ padding: '24px 0', display: 'flex', justifyContent: 'center' }}>
-              <Spin size="small" />
+              <CircularProgress size={20} thickness={4} sx={{ color: palette.menuTextSelected }} />
             </div>
           ) : workspaceOptions.length === 0 && !currentWorkspace ? (
             <Empty
@@ -615,7 +642,7 @@ const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({ palette }) => {
           </Button>,
         ]}
       >
-        <Space direction="vertical" size={16} style={{ width: '100%' }}>
+        <Space orientation="vertical" size={16} style={{ width: '100%' }}>
           <div>
             <Typography.Text strong style={{ color: palette.textPrimary, display: 'block' }}>
               {currentWorkspace?.workspaceName ?? '当前工作区'}

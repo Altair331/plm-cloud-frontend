@@ -2,11 +2,11 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import {
+  App,
   Button,
   Checkbox,
   Form,
   Input,
-  message,
   Select,
   Space,
   Typography,
@@ -194,6 +194,7 @@ const buildInviteResultMessage = (response: AuthWorkspaceInvitationEmailBatchRes
 };
 
 const WorkspaceCreationOnboarding: React.FC = () => {
+  const { message } = App.useApp();
   const { token } = theme.useToken();
   const router = useRouter();
   const [currentStep, setCurrentStep] = useState(0);
@@ -519,6 +520,63 @@ const WorkspaceCreationOnboarding: React.FC = () => {
     }
   };
 
+  const renderWorkspaceSetupFields = () => (
+    <>
+      <Form.Item
+        label="工作区名称"
+        name="workspaceName"
+        rules={[{ required: true, message: '请输入工作区名称' }]}
+      >
+        <Input
+          size="large"
+          maxLength={40}
+          placeholder="例如：MI SAKA 的工作区"
+        />
+      </Form.Item>
+
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+          gap: 16,
+        }}
+      >
+        <Form.Item
+          label="默认语言"
+          name="defaultLocale"
+          rules={[{ required: true, message: '请选择默认语言' }]}
+          style={{ marginBottom: 0 }}
+        >
+          <Select size="large" options={localeOptions} loading={optionsLoading} />
+        </Form.Item>
+
+        <Form.Item
+          label="默认时区"
+          name="defaultTimezone"
+          rules={[{ required: true, message: '请选择默认时区' }]}
+          style={{ marginBottom: 0 }}
+        >
+          <Select size="large" options={timezoneOptions} loading={optionsLoading} />
+        </Form.Item>
+      </div>
+
+      <Form.Item
+        name="rememberAsDefault"
+        valuePropName="checked"
+        style={{ marginTop: 20, marginBottom: 0 }}
+      >
+        <Checkbox>
+          <Space orientation="vertical" size={2} style={{ width: '100%' }}>
+            <Text style={{ color: token.colorText }}>设为默认工作区</Text>
+            <Text style={{ color: token.colorTextTertiary, fontSize: 12 }}>
+              后续登录后优先进入该工作区
+            </Text>
+          </Space>
+        </Checkbox>
+      </Form.Item>
+    </>
+  );
+
   /* ───────── Step 1: Choose workspace type ───────── */
   const renderStep1 = () => (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
@@ -577,58 +635,7 @@ const WorkspaceCreationOnboarding: React.FC = () => {
           rememberAsDefault: true,
         }}
       >
-        <Form.Item
-          label="工作区名称"
-          name="workspaceName"
-          rules={[{ required: true, message: '请输入工作区名称' }]}
-        >
-          <Input
-            size="large"
-            maxLength={40}
-            placeholder="例如：MI SAKA 的工作区"
-          />
-        </Form.Item>
-
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-            gap: 16,
-          }}
-        >
-          <Form.Item
-            label="默认语言"
-            name="defaultLocale"
-            rules={[{ required: true, message: '请选择默认语言' }]}
-            style={{ marginBottom: 0 }}
-          >
-            <Select size="large" options={localeOptions} loading={optionsLoading} />
-          </Form.Item>
-
-          <Form.Item
-            label="默认时区"
-            name="defaultTimezone"
-            rules={[{ required: true, message: '请选择默认时区' }]}
-            style={{ marginBottom: 0 }}
-          >
-            <Select size="large" options={timezoneOptions} loading={optionsLoading} />
-          </Form.Item>
-        </div>
-
-        <Form.Item
-          name="rememberAsDefault"
-          valuePropName="checked"
-          style={{ marginTop: 20, marginBottom: 0 }}
-        >
-          <Checkbox>
-            <Space orientation="vertical" size={2} style={{ width: '100%' }}>
-              <Text style={{ color: token.colorText }}>设为默认工作区</Text>
-              <Text style={{ color: token.colorTextTertiary, fontSize: 12 }}>
-                后续登录后优先进入该工作区
-              </Text>
-            </Space>
-          </Checkbox>
-        </Form.Item>
+        {renderWorkspaceSetupFields()}
       </Form>
 
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginTop: 8 }}>
@@ -781,6 +788,21 @@ const WorkspaceCreationOnboarding: React.FC = () => {
           <div style={{ width: '100%' }}>
             {stepRenderers[currentStep]()}
           </div>
+
+          {currentStep !== 1 ? (
+            <div style={{ display: 'none' }} aria-hidden>
+              <Form<WorkspaceSetupFormValues>
+                form={setupForm}
+                layout="vertical"
+                initialValues={{
+                  workspaceName: '',
+                  rememberAsDefault: true,
+                }}
+              >
+                {renderWorkspaceSetupFields()}
+              </Form>
+            </div>
+          ) : null}
         </div>
       </div>
     </div>

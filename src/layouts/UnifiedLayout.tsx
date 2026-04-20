@@ -497,23 +497,32 @@ const UnifiedLayout: React.FC<UnifiedLayoutProps> = ({
         )}
         location={{ pathname }}
         menuDataRender={() => menuData}
-        menuItemRender={(item, dom) => (
-          <span
-            onMouseDown={(event) => {
-              event.preventDefault();
-            }}
-            onClick={() => {
-              if (item.path && !item.disabled) router.push(item.path);
-            }}
-            style={{
-              display: 'block',
-              width: '100%',
-              cursor: item.disabled ? 'default' : 'pointer',
-            }}
-          >
-            {item.menuRenderContent ?? dom}
-          </span>
-        )}
+        menuItemRender={(item, dom) => {
+          if (!item.menuRenderContent) {
+            return dom;
+          }
+
+          return (
+            <span
+              onMouseDown={(event) => {
+                event.preventDefault();
+              }}
+              onClick={() => {
+                if (item.path && !item.disabled) {
+                  router.push(item.path);
+                }
+              }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                width: '100%',
+                cursor: item.disabled ? 'default' : 'pointer',
+              }}
+            >
+              {item.menuRenderContent}
+            </span>
+          );
+        }}
         avatarProps={undefined}
         rightContentRender={showHeaderRight
           ? () => (

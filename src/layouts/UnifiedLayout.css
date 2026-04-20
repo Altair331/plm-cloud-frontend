@@ -113,3 +113,52 @@
   -webkit-user-select: none;
 }
 
+.ant-pro-sider .ant-menu-inline-collapsed > .ant-menu-item > .ant-menu-title-content,
+.ant-pro-sider .ant-menu-inline-collapsed > .ant-menu-submenu > .ant-menu-submenu-title > .ant-menu-title-content {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  width: 100% !important;
+  opacity: 1 !important;
+  overflow: visible !important;
+}
+
+.ant-pro-sider .ant-menu-inline-collapsed > .ant-menu-item .ant-pro-base-menu-vertical-item-title,
+.ant-pro-sider .ant-menu-inline-collapsed > .ant-menu-submenu > .ant-menu-submenu-title .ant-pro-base-menu-vertical-item-title {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+}
+
+.ant-pro-sider .ant-menu-inline-collapsed > .ant-menu-item .ant-pro-base-menu-vertical-item-icon,
+.ant-pro-sider .ant-menu-inline-collapsed > .ant-menu-submenu > .ant-menu-submenu-title .ant-pro-base-menu-vertical-item-icon {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  min-width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  margin-inline-end: 0 !important;
+  overflow: visible;
+}
+
+.ant-pro-sider .ant-menu-inline-collapsed > .ant-menu-item .ant-pro-base-menu-vertical-item-icon > .anticon,
+.ant-pro-sider .ant-menu-inline-collapsed > .ant-menu-item .ant-pro-base-menu-vertical-item-icon > span,
+.ant-pro-sider .ant-menu-inline-collapsed > .ant-menu-submenu > .ant-menu-submenu-title .ant-pro-base-menu-vertical-item-icon > .anticon,
+.ant-pro-sider .ant-menu-inline-collapsed > .ant-menu-submenu > .ant-menu-submenu-title .ant-pro-base-menu-vertical-item-icon > span,
+.ant-pro-sider .ant-menu-inline-collapsed > .ant-menu-item .anticon,
+.ant-pro-sider .ant-menu-inline-collapsed > .ant-menu-submenu > .ant-menu-submenu-title .anticon {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  min-width: 16px;
+  height: 16px;
+  line-height: 1;
+  opacity: 1;
+}
+

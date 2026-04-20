@@ -103,6 +103,7 @@ const WorkspaceOnboardingLayout: React.FC<React.PropsWithChildren> = ({ children
       menuData={onboardingMenuData}
       homePath="/workspace/create"
       homeTitle="创建工作区"
+      title="PLM Cloud Platform"
       showHeaderRight={false}
       showTabs={false}
       contentVariant="plain"

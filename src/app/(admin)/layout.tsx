@@ -10,6 +10,7 @@ import {
 } from '@ant-design/icons';
 import UnifiedLayout, { MenuItem } from "@/layouts/UnifiedLayout";
 import { useDictionary } from '@/contexts/DictionaryContext';
+import { useProtectedAppAccess } from '@/hooks/useProtectedAppAccess';
 import {
   CATEGORY_BUSINESS_DOMAIN_DICT_CODE,
   formatCategoryBusinessDomainMenuLabel,
@@ -19,6 +20,7 @@ import {
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const { ensureBatch, getEntries } = useDictionary();
+  const checkingAccess = useProtectedAppAccess({ loadingMessage: '正在验证管理端访问权限...' });
 
   useEffect(() => {
     void ensureBatch([CATEGORY_BUSINESS_DOMAIN_DICT_CODE]);
@@ -68,6 +70,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       ],
     },
   ];
+
+  if (checkingAccess) {
+    return null;
+  }
 
   return (
     <UnifiedLayout 
