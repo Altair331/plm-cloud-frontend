@@ -5,6 +5,8 @@ import type {
   AuthErrorResponseDto,
   AuthLoginResponseDto,
   AuthMeResponseDto,
+  AuthPlatformAdminLoginResponseDto,
+  AuthPlatformAdminMeResponseDto,
   AuthPasswordLoginRequestDto,
   AuthPasswordEncryptionKeyDto,
   AuthRegisterRequestDto,
@@ -30,6 +32,8 @@ export type {
   AuthErrorResponseDto,
   AuthLoginResponseDto,
   AuthMeResponseDto,
+  AuthPlatformAdminLoginResponseDto,
+  AuthPlatformAdminMeResponseDto,
   AuthPasswordLoginRequestDto,
   AuthPasswordEncryptionKeyDto,
   AuthRegisterRequestDto,
@@ -127,6 +131,10 @@ export const authApi = {
     return request.post(`${AUTH_PUBLIC_BASE}/login/password`, data);
   },
 
+  loginPlatformAdminWithPassword(data: AuthPasswordLoginRequestDto): Promise<AuthPlatformAdminLoginResponseDto> {
+    return request.post(`${AUTH_PUBLIC_BASE}/platform-admin/login/password`, data);
+  },
+
   logout(authHeaders: AuthRequestHeaders): Promise<void> {
     return request.post(`${AUTH_BASE}/logout`, undefined, {
       headers: buildPlatformAuthHeaders(authHeaders),
@@ -135,6 +143,12 @@ export const authApi = {
 
   getMe(authHeaders: AuthRequestHeaders): Promise<AuthMeResponseDto> {
     return request.get(`${AUTH_BASE}/me`, {
+      headers: buildPlatformAuthHeaders(authHeaders),
+    });
+  },
+
+  getPlatformAdminMe(authHeaders: AuthRequestHeaders): Promise<AuthPlatformAdminMeResponseDto> {
+    return request.get(`${AUTH_BASE}/platform-admin/me`, {
       headers: buildPlatformAuthHeaders(authHeaders),
     });
   },

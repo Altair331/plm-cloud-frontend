@@ -44,6 +44,7 @@ export interface UnifiedLayoutProps {
   showHeaderRight?: boolean;
   showTabs?: boolean;
   contentVariant?: 'card' | 'plain';
+  headerAuthMode?: 'user' | 'platform-admin';
 }
 
 const DefaultHomePath = "/dashboard";
@@ -91,6 +92,7 @@ const UnifiedLayout: React.FC<UnifiedLayoutProps> = ({
   showHeaderRight = true,
   showTabs = true,
   contentVariant = 'card',
+  headerAuthMode = 'user',
 }) => {
   const pathname = usePathname();
   const router = useRouter();
@@ -532,6 +534,7 @@ const UnifiedLayout: React.FC<UnifiedLayoutProps> = ({
         rightContentRender={showHeaderRight
           ? () => (
               <HeaderRight
+                authMode={headerAuthMode}
                 isDarkMode={isDarkMode}
                 onToggleTheme={handleToggleTheme}
                 palette={palette}

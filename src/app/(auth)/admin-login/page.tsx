@@ -15,14 +15,16 @@ import {
   ArrowRightOutlined,
   LeftOutlined,
 } from '@ant-design/icons';
+import { authApi, isAuthErrorResponse } from '@/services/auth';
+import { persistPlatformAuthState } from '@/utils/authStorage';
+import { encryptPasswordWithPublicKey } from '@/utils/passwordEncryption';
 
 const { Title, Text } = Typography;
 
 interface AdminLoginFormValues {
   account: string;
   password: string;
-  otp: string;
-  rememberDevice?: boolean;
+  remember?: boolean;
 }
 
 interface GradientBlob {
@@ -40,6 +42,7 @@ export default function AdminLoginPage() {
   const { token } = theme.useToken();
   const [form] = Form.useForm<AdminLoginFormValues>();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [submitting, setSubmitting] = React.useState(false);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -129,9 +132,77 @@ export default function AdminLoginPage() {
     };
   }, []);
 
-  const handleSubmit = (values: AdminLoginFormValues) => {
-    void values;
-    message.info('平台管理员登录接口暂未接入，当前页面为 UI 设计预览。');
+  const handleSubmit = async (values: AdminLoginFormValues) => {
+    setSubmitting(true);
+
+    try {
+      const encryptionKey = await authApi.getPasswordEncryptionKey();
+      const passwordCiphertext = await encryptPasswordWithPublicKey(
+        values.password,
+        encryptionKey.publicKeyBase64 || encryptionKey.publicKeyPem || '',
+        encryptionKey.transformation,
+      );
+
+      const loginResponse = await authApi.loginPlatformAdminWithPassword({
+        identifier: values.account.trim(),
+        passwordCiphertext,
+        encryptionKeyId: encryptionKey.keyId,
+        remember: values.remember !== false,
+      });
+
+      const validatedAdmin = await authApi.getPlatformAdminMe({
+        platformToken: loginResponse.platformToken,
+        platformTokenName: loginResponse.platformTokenName,
+      });
+
+      persistPlatformAuthState(
+        {
+          platformToken: loginResponse.platformToken,
+          platformTokenName: loginResponse.platformTokenName,
+          remember: loginResponse.remember,
+          platformTokenExpireInSeconds: loginResponse.platformTokenExpireInSeconds,
+          user: null,
+          admin: validatedAdmin.admin,
+          principalType: 'platform-admin',
+        },
+        {
+          remember: loginResponse.remember,
+          resetWorkspace: true,
+        },
+      );
+
+      message.success('平台管理员登录成功。');
+      window.location.assign('/admin/dashboard');
+    } catch (error) {
+      if (isAuthErrorResponse(error)) {
+        if (error.code === 'AUTH_INVALID_CREDENTIALS') {
+          form.setFields([{ name: 'password', errors: ['管理员账号或密码错误'] }]);
+          return;
+        }
+
+        if (error.code === 'PLATFORM_ADMIN_REQUIRED') {
+          message.error('当前账号没有平台管理员权限，无法进入平台控制台。');
+          return;
+        }
+
+        if (error.code === 'ACCOUNT_NOT_ACTIVE') {
+          message.error('账号当前不可登录，请联系管理员。');
+          return;
+        }
+
+        if (error.code === 'INVALID_ARGUMENT') {
+          message.error(error.message || '登录信息无效或登录加密已过期，请重试。');
+          return;
+        }
+
+        message.error(error.message || '平台管理员登录失败，请稍后重试。');
+        return;
+      }
+
+      message.error('平台管理员登录失败，请稍后重试。');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -180,7 +251,7 @@ export default function AdminLoginPage() {
                     登录平台管理员控制台
                   </Title>
                   <Text className="admin-auth-form-subtitle">
-                    仅保留管理员账号、密码与验证码输入，当前页面仅作 UI 展示，不执行实际登录。
+                    当前已接入平台管理员专用账密登录接口。MFA Token 暂未开放，先保留为灰态占位展示。
                   </Text>
                 </div>
 
@@ -188,7 +259,7 @@ export default function AdminLoginPage() {
                   form={form}
                   layout="vertical"
                   className="admin-auth-form"
-                  initialValues={{ rememberDevice: true }}
+                  initialValues={{ remember: true }}
                   onFinish={handleSubmit}
                 >
                   <Form.Item
@@ -216,20 +287,20 @@ export default function AdminLoginPage() {
                   </Form.Item>
 
                   <Form.Item
-                    label="一次性验证码"
-                    name="otp"
-                    rules={[{ required: true, message: '请输入一次性验证码' }]}
+                    label="MFA Token（暂未开放）"
+                    extra="后端当前尚未提供 MFA 校验，本阶段仅启用管理员账号 + 密码登录。"
                   >
                     <Input
                       size="large"
-                      placeholder="6 位验证码 / MFA Token"
-                      className="ibm-input admin-auth-input"
+                      disabled
+                      placeholder="暂未开放，当前无需填写"
+                      className="ibm-input admin-auth-input admin-auth-input-disabled"
                     />
                   </Form.Item>
 
                   <div className="admin-auth-form-meta">
-                    <Form.Item name="rememberDevice" valuePropName="checked" noStyle>
-                      <Checkbox className="admin-auth-checkbox">记住当前设备 7 天</Checkbox>
+                    <Form.Item name="remember" valuePropName="checked" noStyle>
+                      <Checkbox className="admin-auth-checkbox">保持登录</Checkbox>
                     </Form.Item>
 
                     <Link href="#" className="admin-auth-inline-link">
@@ -242,6 +313,7 @@ export default function AdminLoginPage() {
                     htmlType="submit"
                     size="large"
                     block
+                    loading={submitting}
                     className="admin-auth-submit"
                     icon={<ArrowRightOutlined />}
                     iconPlacement="end"

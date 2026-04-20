@@ -16,19 +16,21 @@ import { useRouter } from 'next/navigation';
 import type { AppPalette } from '@/styles/colors';
 import { authApi, isAuthErrorResponse } from '@/services/auth';
 import { clearPersistedAuthState, persistPlatformAuthState, persistWorkspaceSessionState, readPersistedAuthHeaders, readPersistedAuthSnapshot } from '@/utils/authStorage';
-import type { AuthUserSummaryDto } from '@/models/auth';
+import type { AuthPlatformAdminSummaryDto, AuthUserSummaryDto } from '@/models/auth';
 
 interface HeaderRightProps {
+  authMode?: 'user' | 'platform-admin';
   isDarkMode: boolean;
   onToggleTheme: () => void;
   palette: AppPalette;
 }
 
-const HeaderRight: React.FC<HeaderRightProps> = ({ isDarkMode, onToggleTheme, palette }) => {
+const HeaderRight: React.FC<HeaderRightProps> = ({ authMode = 'user', isDarkMode, onToggleTheme, palette }) => {
   const { message } = App.useApp();
   const router = useRouter();
   const initialSnapshot = useMemo(() => readPersistedAuthSnapshot(), []);
   const [user, setUser] = useState<AuthUserSummaryDto | null>(initialSnapshot.platformAuth.user);
+  const [admin, setAdmin] = useState<AuthPlatformAdminSummaryDto | null>(initialSnapshot.platformAuth.admin);
   const [logoutLoading, setLogoutLoading] = useState(false);
 
   useEffect(() => {
@@ -39,36 +41,69 @@ const HeaderRight: React.FC<HeaderRightProps> = ({ isDarkMode, onToggleTheme, pa
 
     let active = true;
 
-    authApi.getMe(persistedHeaders)
-      .then((response) => {
-        if (!active) {
-          return;
-        }
+    if (authMode === 'platform-admin') {
+      authApi.getPlatformAdminMe(persistedHeaders)
+        .then((response) => {
+          if (!active) {
+            return;
+          }
 
-        setUser(response.user);
-        const snapshot = readPersistedAuthSnapshot();
-        persistPlatformAuthState({
-          ...snapshot.platformAuth,
-          user: response.user,
+          setAdmin(response.admin);
+          const snapshot = readPersistedAuthSnapshot();
+          persistPlatformAuthState({
+            ...snapshot.platformAuth,
+            user: null,
+            admin: response.admin,
+            principalType: 'platform-admin',
+          });
+        })
+        .catch(() => {
+          if (active) {
+            setAdmin(initialSnapshot.platformAuth.admin);
+          }
         });
-      })
-      .catch(() => {
-        if (active) {
-          setUser(initialSnapshot.platformAuth.user);
-        }
-      });
+    } else {
+      authApi.getMe(persistedHeaders)
+        .then((response) => {
+          if (!active) {
+            return;
+          }
+
+          setUser(response.user);
+          const snapshot = readPersistedAuthSnapshot();
+          persistPlatformAuthState({
+            ...snapshot.platformAuth,
+            user: response.user,
+            admin: null,
+            principalType: 'user',
+          });
+        })
+        .catch(() => {
+          if (active) {
+            setUser(initialSnapshot.platformAuth.user);
+          }
+        });
+    }
 
     return () => {
       active = false;
     };
-  }, [initialSnapshot.platformAuth.user]);
+  }, [authMode, initialSnapshot.platformAuth.admin, initialSnapshot.platformAuth.user]);
+
+  const accountDisplayName = authMode === 'platform-admin'
+    ? (admin?.displayName || '平台管理员')
+    : (user?.displayName || '当前账号');
+
+  const accountEmail = authMode === 'platform-admin'
+    ? (admin?.email || '未绑定邮箱')
+    : (user?.email || '未绑定邮箱');
 
   const menuItems = useMemo<MenuProps['items']>(
     () => [
       {
         key: 'profile-group',
         type: 'group',
-        label: user?.displayName || '当前账号',
+        label: accountDisplayName,
         children: [
           {
             key: 'profile-email',
@@ -76,7 +111,7 @@ const HeaderRight: React.FC<HeaderRightProps> = ({ isDarkMode, onToggleTheme, pa
               <Space size={4}>
                 <FileTextOutlined />
                 <Typography.Text style={{ color: palette.textSecondary }}>
-                  {user?.email || '未绑定邮箱'}
+                  {accountEmail}
                 </Typography.Text>
               </Space>
             ),
@@ -111,7 +146,7 @@ const HeaderRight: React.FC<HeaderRightProps> = ({ isDarkMode, onToggleTheme, pa
       { type: 'divider', key: 'divider-2' },
       { key: 'logout', label: '退出登录', icon: <LogoutOutlined /> },
     ],
-    [isDarkMode, palette, user]
+    [accountDisplayName, accountEmail, isDarkMode, palette]
   );
 
   const handleLogout = async () => {
@@ -133,7 +168,7 @@ const HeaderRight: React.FC<HeaderRightProps> = ({ isDarkMode, onToggleTheme, pa
     clearPersistedAuthState();
     persistWorkspaceSessionState(null);
     message.success('已退出登录。');
-    router.push('/login');
+    router.push(authMode === 'platform-admin' ? '/admin-login' : '/login');
     router.refresh();
     setLogoutLoading(false);
   };
@@ -199,7 +234,7 @@ const HeaderRight: React.FC<HeaderRightProps> = ({ isDarkMode, onToggleTheme, pa
         >
           <Avatar size={28} icon={<UserOutlined />} />
           <Typography.Text strong style={{ color: palette.textPrimary }}>
-            {user?.displayName || '当前账号'}
+            {accountDisplayName}
           </Typography.Text>
           <SettingOutlined style={{ color: palette.iconColor }} />
         </div>

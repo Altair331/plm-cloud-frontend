@@ -10,7 +10,7 @@ import {
 } from '@ant-design/icons';
 import UnifiedLayout, { MenuItem } from "@/layouts/UnifiedLayout";
 import { useDictionary } from '@/contexts/DictionaryContext';
-import { useProtectedAppAccess } from '@/hooks/useProtectedAppAccess';
+import { useProtectedPlatformAdminAccess } from '@/hooks/useProtectedPlatformAdminAccess';
 import {
   CATEGORY_BUSINESS_DOMAIN_DICT_CODE,
   formatCategoryBusinessDomainMenuLabel,
@@ -20,7 +20,7 @@ import {
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const { ensureBatch, getEntries } = useDictionary();
-  const checkingAccess = useProtectedAppAccess({ loadingMessage: '正在验证管理端访问权限...' });
+  const checkingAccess = useProtectedPlatformAdminAccess({ loadingMessage: '正在验证平台管理员访问权限...' });
 
   useEffect(() => {
     void ensureBatch([CATEGORY_BUSINESS_DOMAIN_DICT_CODE]);
@@ -81,6 +81,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       title="PLM Cloud Platform - Admin Panel"
       homePath="/admin/dashboard"
       homeTitle="管理概览"
+      headerAuthMode="platform-admin"
     >
         {children}
     </UnifiedLayout>

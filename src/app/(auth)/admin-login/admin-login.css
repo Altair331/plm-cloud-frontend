@@ -52,7 +52,7 @@
   margin: 0 auto;
   padding: 40px 32px 56px;
   display: flex;
-  justify-content: flex-end;
+  justify-content: center;
   align-items: center;
 }
 
@@ -144,6 +144,17 @@
 .admin-auth-input:hover {
   background-color: #f4f4f4;
   border-color: #8d8d8d;
+}
+
+.admin-auth-input.ant-input[disabled],
+.admin-auth-input.ant-input-affix-wrapper-disabled,
+.admin-auth-input-disabled.ant-input,
+.admin-auth-input-disabled.ant-input-affix-wrapper {
+  color: #8d8d8d;
+  background-color: #e8e8e8;
+  border-color: #c6c6c6;
+  cursor: not-allowed;
+  box-shadow: none;
 }
 
 .admin-auth-input:focus,

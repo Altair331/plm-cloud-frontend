@@ -82,6 +82,8 @@ export default function LoginPage() {
           remember: response.remember,
           platformTokenExpireInSeconds: response.platformTokenExpireInSeconds,
           user: response.user,
+          admin: null,
+          principalType: 'user',
         },
         {
           remember,

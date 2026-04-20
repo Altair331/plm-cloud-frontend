@@ -10,6 +10,8 @@ export type AuthWorkspaceType = OpenEndedUnion<'TEAM' | 'PERSONAL' | 'LEARNING'>
 
 export type AuthInvitationSourceScene = OpenEndedUnion<'WORKSPACE' | 'ONBOARDING'>;
 
+export type AuthPrincipalType = OpenEndedUnion<'user' | 'platform-admin'>;
+
 export type AuthWorkspaceInvitationEmailBatchResult = OpenEndedUnion<
   | 'CREATED'
   | 'INVALID_EMAIL'
@@ -26,6 +28,7 @@ export type AuthErrorCode = OpenEndedUnion<
   | 'AUTH_NOT_LOGGED_IN'
   | 'AUTH_INVALID_CREDENTIALS'
   | 'ACCOUNT_NOT_ACTIVE'
+  | 'PLATFORM_ADMIN_REQUIRED'
   | 'EMAIL_ALREADY_EXISTS'
   | 'PHONE_ALREADY_EXISTS'
   | 'USERNAME_ALREADY_EXISTS'
@@ -73,6 +76,17 @@ export interface AuthUserSummaryDto {
   status: AuthUserStatus;
   isFirstLogin: boolean;
   workspaceCount: number;
+}
+
+export interface AuthPlatformAdminSummaryDto {
+  id: string;
+  username: string;
+  displayName: string;
+  email: string | null;
+  phone: string | null;
+  status: AuthUserStatus;
+  roleCodes: string[];
+  superAdmin: boolean;
 }
 
 export interface AuthWorkspaceSummaryDto {
@@ -179,11 +193,23 @@ export interface AuthLoginResponseDto {
   currentWorkspace: AuthWorkspaceSessionDto | null;
 }
 
+export interface AuthPlatformAdminLoginResponseDto {
+  platformToken: string;
+  platformTokenName: string;
+  remember: boolean;
+  platformTokenExpireInSeconds: number;
+  admin: AuthPlatformAdminSummaryDto;
+}
+
 export interface AuthMeResponseDto {
   user: AuthUserSummaryDto;
   defaultWorkspace: AuthWorkspaceSummaryDto | null;
   workspaceOptions: AuthWorkspaceSummaryDto[];
   currentWorkspace: AuthWorkspaceSessionDto | null;
+}
+
+export interface AuthPlatformAdminMeResponseDto {
+  admin: AuthPlatformAdminSummaryDto;
 }
 
 export interface AuthListWorkspacesResponseDto extends Array<AuthWorkspaceSummaryDto> {}
@@ -251,6 +277,8 @@ export interface PlatformAuthState {
   remember: boolean;
   platformTokenExpireInSeconds: number | null;
   user: AuthUserSummaryDto | null;
+  admin: AuthPlatformAdminSummaryDto | null;
+  principalType: AuthPrincipalType | null;
 }
 
 export interface WorkspaceSessionState {
@@ -272,6 +300,8 @@ export const createEmptyPlatformAuthState = (): PlatformAuthState => ({
   remember: false,
   platformTokenExpireInSeconds: null,
   user: null,
+  admin: null,
+  principalType: null,
 });
 
 export const createEmptyWorkspaceSessionState = (): WorkspaceSessionState => ({

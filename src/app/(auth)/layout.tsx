@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useGlobalLoading } from '@/components/providers/GlobalLoadingProvider';
 import { authApi, isAuthErrorResponse } from '@/services/auth';
 import {
@@ -22,12 +22,15 @@ export default function AuthLayout({
   children: React.ReactNode;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
   const { showLoading, hideLoading } = useGlobalLoading();
   const [checkingAccess, setCheckingAccess] = useState(true);
 
   useEffect(() => {
     let active = true;
     const persistedHeaders = readPersistedAuthHeaders();
+    const currentSnapshot = readPersistedAuthSnapshot();
+    const isPlatformAdmin = currentSnapshot.platformAuth.principalType === 'platform-admin';
 
     if (!persistedHeaders.platformToken || !persistedHeaders.platformTokenName) {
       setCheckingAccess(false);
@@ -55,16 +58,34 @@ export default function AuthLayout({
 
     const restoreSession = async () => {
       try {
+        if (isPlatformAdmin) {
+          const adminMe = await authApi.getPlatformAdminMe(persistedHeaders);
+
+          if (!active) {
+            return;
+          }
+
+          persistPlatformAuthState({
+            ...currentSnapshot.platformAuth,
+            user: null,
+            admin: adminMe.admin,
+            principalType: 'platform-admin',
+          });
+          redirectTo('/admin/dashboard');
+          return;
+        }
+
         const me = await authApi.getMe(persistedHeaders);
 
         if (!active) {
           return;
         }
 
-        const currentSnapshot = readPersistedAuthSnapshot();
         persistPlatformAuthState({
           ...currentSnapshot.platformAuth,
           user: me.user,
+          admin: null,
+          principalType: 'user',
         });
 
         const shouldCreateWorkspace = me.user.isFirstLogin || me.user.workspaceCount === 0;
@@ -108,8 +129,14 @@ export default function AuthLayout({
           return;
         }
 
-        if (isAuthErrorResponse(error) && error.code === 'AUTH_NOT_LOGGED_IN') {
-          clearPersistedAuthState();
+        if (isAuthErrorResponse(error)) {
+          if (error.code === 'AUTH_NOT_LOGGED_IN') {
+            clearPersistedAuthState();
+          }
+
+          if (isPlatformAdmin && (error.code === 'PLATFORM_ADMIN_REQUIRED' || error.code === 'ACCOUNT_NOT_ACTIVE')) {
+            clearPersistedAuthState();
+          }
         }
 
         allowAuthPage();
@@ -122,7 +149,7 @@ export default function AuthLayout({
       active = false;
       hideLoading(loadingId);
     };
-  }, [hideLoading, router, showLoading]);
+  }, [hideLoading, pathname, router, showLoading]);
 
   if (checkingAccess) {
     return null;

@@ -65,6 +65,8 @@ export const useProtectedAppAccess = (
         persistPlatformAuthState({
           ...currentSnapshot.platformAuth,
           user: me.user,
+          admin: null,
+          principalType: 'user',
         });
 
         const shouldCreateWorkspace = me.user.isFirstLogin || me.user.workspaceCount === 0;
@@ -137,6 +139,8 @@ export const useProtectedAppAccess = (
                       ...snapshot.platformAuth.user,
                       workspaceCount: 0,
                     },
+                    admin: null,
+                    principalType: 'user',
                   });
                 }
                 redirectTo('/workspace/create');

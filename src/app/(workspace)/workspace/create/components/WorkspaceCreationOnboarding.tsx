@@ -231,6 +231,8 @@ const WorkspaceCreationOnboarding: React.FC = () => {
         persistPlatformAuthState({
           ...currentSnapshot.platformAuth,
           user: session.user,
+          admin: null,
+          principalType: 'user',
         });
 
         if (session.currentWorkspace) {
@@ -351,6 +353,8 @@ const WorkspaceCreationOnboarding: React.FC = () => {
       persistPlatformAuthState({
         ...currentSnapshot.platformAuth,
         user: me.user,
+        admin: null,
+        principalType: 'user',
       });
     } catch {
       const currentSnapshot = readPersistedAuthSnapshot();
@@ -362,6 +366,8 @@ const WorkspaceCreationOnboarding: React.FC = () => {
             isFirstLogin: false,
             workspaceCount: Math.max(1, currentSnapshot.platformAuth.user.workspaceCount),
           },
+          admin: null,
+          principalType: 'user',
         });
       }
     }
