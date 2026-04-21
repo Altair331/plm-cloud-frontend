@@ -1,10 +1,11 @@
 import React from 'react';
 import { Tree, theme } from 'antd';
-import type { TreeDataNode } from 'antd';
 import { FolderOutlined, FolderOpenOutlined } from '@ant-design/icons';
 import { useDraggable } from '@dnd-kit/core';
 import type { TransferTreeNode } from './TransferWorkspace';
 import { getTransferNodeLabelStyle } from './transferNodeStyles';
+
+type ThemeToken = ReturnType<typeof theme.useToken>['token'];
 
 interface DraggableSourceTreeProps {
   treeData: TransferTreeNode[];
@@ -19,8 +20,8 @@ const SourceNodeTitle = ({
   token,
   onMovedNodeHover,
 }: {
-  nodeData: any;
-  token: any;
+  nodeData: TransferTreeNode;
+  token: ThemeToken;
   onMovedNodeHover?: (key: React.Key | null) => void;
 }) => {
   const { isContextOnly, isMovedSource } = nodeData;
@@ -103,7 +104,7 @@ export default function DraggableSourceTree({
 }: DraggableSourceTreeProps) {
   const { token } = theme.useToken();
 
-  const titleRender = (nodeData: any) => {
+  const titleRender = (nodeData: TransferTreeNode) => {
     return <SourceNodeTitle nodeData={nodeData} token={token} onMovedNodeHover={onMovedNodeHover} />;
   };
 
@@ -112,13 +113,13 @@ export default function DraggableSourceTree({
       <div style={{ flex: '1 1 0', minHeight: 0, overflow: 'auto' }}>
         <Tree
           className="draggable-source-tree dnd-transfer-tree"
-          treeData={treeData as TreeDataNode[]}
+          treeData={treeData}
           expandedKeys={expandedKeys}
           autoExpandParent
           onExpand={onExpand}
           titleRender={titleRender}
           showIcon
-          icon={(nodeProps: any) => 
+          icon={(nodeProps: { expanded?: boolean }) => 
             nodeProps.expanded ? <FolderOpenOutlined /> : <FolderOutlined />
           }
           blockNode

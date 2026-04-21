@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { Collapse, Spin, Tag, Timeline, Typography, theme } from "antd";
 
 const { Text } = Typography;
@@ -150,11 +150,12 @@ export default function BatchTransferDryRunPanel({
   const panelBodyMaxHeight = hasExecutionProgress
     ? `calc(${height} - 340px)`
     : `calc(${height} - 220px)`;
-  const [activeKey, setActiveKey] = useState<string[]>(["summary"]);
-
-  useEffect(() => {
-    setActiveKey(hasExecutionProgress ? ["execution"] : ["summary"]);
-  }, [hasExecutionProgress, executionStage, executionSummary]);
+  const [activeKeysByMode, setActiveKeysByMode] = useState<Record<"summary" | "execution", string[]>>({
+    summary: ["summary"],
+    execution: ["execution"],
+  });
+  const activeMode = hasExecutionProgress ? "execution" : "summary";
+  const activeKey = activeKeysByMode[activeMode];
 
   const executionTimelineItems = useMemo(
     () =>
@@ -335,7 +336,10 @@ export default function BatchTransferDryRunPanel({
               : key
                 ? [String(key)]
                 : [];
-            setActiveKey(nextKeys);
+            setActiveKeysByMode((prev) => ({
+              ...prev,
+              [activeMode]: nextKeys,
+            }));
           }}
           items={collapseItems}
           style={{

@@ -791,15 +791,15 @@ interface WorkbookImportRuntimeOverviewProps {
 
 export const WorkbookImportRuntimeOverview: React.FC<
   WorkbookImportRuntimeOverviewProps
-> = ({
-  token,
-  kind,
-  status,
-  runtimeState,
-  taskDrawerOpen,
-  taskDrawerKind,
-  onToggleTaskDrawer,
-}) => {
+> = (props) => {
+  const {
+    token,
+    kind,
+    status,
+    taskDrawerOpen,
+    taskDrawerKind,
+    onToggleTaskDrawer,
+  } = props;
   const finished = isTerminalStatus(status.status);
   const progressStatus = finished
     ? status.status === "COMPLETED"

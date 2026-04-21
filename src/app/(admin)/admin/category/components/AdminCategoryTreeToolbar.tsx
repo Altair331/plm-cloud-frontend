@@ -1,5 +1,4 @@
 import React from "react";
-import { theme } from "antd";
 import {
   PlusOutlined,
   DeleteOutlined,
@@ -39,8 +38,6 @@ const AdminCategoryTreeToolbar: React.FC<AdminCategoryTreeToolbarProps> = ({
   onExport,
   toolbarState,
 }) => {
-  const { token } = theme.useToken();
-
   const primaryActions: ToolbarAction[] = [
     {
       key: "add",

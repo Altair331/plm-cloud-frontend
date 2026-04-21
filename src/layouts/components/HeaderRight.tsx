@@ -31,7 +31,6 @@ const HeaderRight: React.FC<HeaderRightProps> = ({ authMode = 'user', isDarkMode
   const initialSnapshot = useMemo(() => readPersistedAuthSnapshot(), []);
   const [user, setUser] = useState<AuthUserSummaryDto | null>(initialSnapshot.platformAuth.user);
   const [admin, setAdmin] = useState<AuthPlatformAdminSummaryDto | null>(initialSnapshot.platformAuth.admin);
-  const [logoutLoading, setLogoutLoading] = useState(false);
 
   useEffect(() => {
     const persistedHeaders = readPersistedAuthHeaders();
@@ -151,7 +150,6 @@ const HeaderRight: React.FC<HeaderRightProps> = ({ authMode = 'user', isDarkMode
 
   const handleLogout = async () => {
     const persistedHeaders = readPersistedAuthHeaders();
-    setLogoutLoading(true);
 
     try {
       if (persistedHeaders.platformToken && persistedHeaders.platformTokenName) {
@@ -160,7 +158,6 @@ const HeaderRight: React.FC<HeaderRightProps> = ({ authMode = 'user', isDarkMode
     } catch (error) {
       if (isAuthErrorResponse(error) && error.code !== 'AUTH_NOT_LOGGED_IN') {
         message.error(error.message || '退出登录失败，请稍后重试。');
-        setLogoutLoading(false);
         return;
       }
     }
@@ -170,7 +167,6 @@ const HeaderRight: React.FC<HeaderRightProps> = ({ authMode = 'user', isDarkMode
     message.success('已退出登录。');
     router.push(authMode === 'platform-admin' ? '/admin-login' : '/login');
     router.refresh();
-    setLogoutLoading(false);
   };
 
   const handleMenuClick: MenuProps['onClick'] = ({ key }) => {

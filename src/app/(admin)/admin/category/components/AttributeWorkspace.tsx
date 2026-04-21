@@ -14,15 +14,11 @@ import {
   theme,
   Flex,
   Tag,
-  Radio,
   Button,
   Descriptions,
   Splitter,
-  Badge,
-  Tooltip,
   Row,
   Col,
-  Collapse,
   Tabs,
   Upload,
   Image,
@@ -31,23 +27,15 @@ import {
 } from "antd";
 import type { MenuProps } from "antd";
 import {
-  InfoCircleOutlined,
   EditOutlined,
   AppstoreOutlined,
   SaveOutlined,
   CloseOutlined,
-  DatabaseOutlined,
   UploadOutlined,
-  PictureOutlined,
-  ColumnWidthOutlined,
   PlusOutlined,
   ImportOutlined,
   ExportOutlined,
-  SearchOutlined,
-  SortAscendingOutlined,
   DeleteOutlined,
-  HistoryOutlined,
-  UnorderedListOutlined,
   BarsOutlined,
   SettingOutlined,
 } from "@ant-design/icons";
@@ -56,9 +44,9 @@ import {
   ColDef,
   ModuleRegistry,
   AllCommunityModule,
+  CellContextMenuEvent,
   themeQuartz,
   ICellRendererParams,
-  Theme,
 } from "ag-grid-community";
 import { AttributeItem, EnumOptionItem, AttributeType } from "./types";
 import FloatingContextMenu from "@/components/ContextMenu/FloatingContextMenu";
@@ -69,7 +57,7 @@ ModuleRegistry.registerModules([AllCommunityModule]);
 interface AttributeWorkspaceProps {
   attribute: AttributeItem | null;
   selectedCount?: number;
-  onUpdate: (key: string, value: any) => void;
+  onUpdate: (key: string, value: unknown) => void;
   enumOptions: EnumOptionItem[];
   setEnumOptions: (data: EnumOptionItem[]) => void;
   previewLoading?: boolean;
@@ -86,8 +74,24 @@ interface AttributeWorkspaceProps {
 
 const { Option } = Select;
 const { Text, Title } = Typography;
-const { Panel } = Collapse;
 const READ_ONLY_ENUM_TABLE_HEADER_OFFSET = 47;
+
+interface ErrorWithMessage {
+  message?: string;
+  error?: string;
+}
+
+interface AttributeFormChangeMap extends Record<string, unknown> {
+  type?: AttributeType;
+}
+
+const getErrorMessage = (error: unknown) => {
+  if (error && typeof error === "object") {
+    const candidate = error as ErrorWithMessage;
+    return candidate.message || candidate.error || "";
+  }
+  return "";
+};
 
 const isEmptyDefaultValue = (value: AttributeItem["defaultValue"]) =>
   value === undefined || value === null || (Array.isArray(value) && value.length === 0);
@@ -222,10 +226,6 @@ const AttributeWorkspace: React.FC<AttributeWorkspaceProps> = ({
   onUpdate,
   enumOptions,
   setEnumOptions,
-  previewLoading = false,
-  previewWarnings = [],
-  allowManualCodeOverride = false,
-  allowManualEnumCodeOverride = false,
   onDiscard,
   onSave,
   onSaveAndNext,
@@ -236,10 +236,16 @@ const AttributeWorkspace: React.FC<AttributeWorkspaceProps> = ({
   const { token } = theme.useToken();
   const { modal } = App.useApp();
   const [form] = Form.useForm();
-  const [isEditing, setIsEditing] = useState(false);
-  const [numericDefaultSliderOpen, setNumericDefaultSliderOpen] = useState(false);
+  const [editingAttributeId, setEditingAttributeId] = useState<string | null>(null);
+  const [numericDefaultSliderOpenFor, setNumericDefaultSliderOpenFor] = useState<string | null>(null);
   const [readOnlyEnumTableScrollY, setReadOnlyEnumTableScrollY] = useState(240);
-  const [saveStatus, setSaveStatus] = useState<"idle" | "loading" | "success">("idle");
+  const [saveStatusState, setSaveStatusState] = useState<{
+    attributeId: string | null;
+    status: "idle" | "loading" | "success";
+  }>({
+    attributeId: null,
+    status: "idle",
+  });
   const gridRef = useRef<AgGridReact>(null);
   const readOnlyEnumTableContainerRef = useRef<HTMLDivElement | null>(null);
 
@@ -261,6 +267,10 @@ const AttributeWorkspace: React.FC<AttributeWorkspaceProps> = ({
   }, [enumOptions]);
 
   const showGridImage = attribute?.renderType === "image";
+  const isEditing = attribute ? attribute.id.startsWith("new_attr_") || editingAttributeId === attribute.id : false;
+  const numericDefaultSliderContextKey = attribute ? `${attribute.id}:${attribute.type}` : null;
+  const numericDefaultSliderOpen = numericDefaultSliderContextKey !== null && numericDefaultSliderOpenFor === numericDefaultSliderContextKey;
+  const saveStatus = attribute && saveStatusState.attributeId === attribute.id ? saveStatusState.status : "idle";
 
   const colDefs = useMemo<ColDef<EnumOptionItem>[]>(() => {
     const ImageCellRenderer = (params: ICellRendererParams) => {
@@ -448,18 +458,13 @@ const AttributeWorkspace: React.FC<AttributeWorkspaceProps> = ({
     if (!attribute) {
       prevAttributeIdRef.current = undefined;
       form.resetFields();
-      setIsEditing(false);
-      setSaveStatus("idle");
       return;
     }
 
     if (attribute.id !== prevAttributeIdRef.current) {
       // Attribute selection changed: switch editing mode by attribute type
-      const isNew = attribute.id.startsWith("new_attr_");
       form.resetFields();
       form.setFieldsValue(attribute);
-      setIsEditing(isNew);
-      setSaveStatus("idle");
       prevAttributeIdRef.current = attribute.id;
       return;
     }
@@ -468,17 +473,13 @@ const AttributeWorkspace: React.FC<AttributeWorkspaceProps> = ({
     if (isEditing) {
       form.setFieldsValue(attribute);
     }
-  }, [attribute, isEditing, form]);
+  }, [attribute, form, isEditing]);
 
   useEffect(() => {
     // Ensure form values are written only after edit form is mounted.
     if (!isEditing || !attribute) return;
     form.setFieldsValue(attribute);
   }, [isEditing, attribute, form]);
-
-  useEffect(() => {
-    setNumericDefaultSliderOpen(false);
-  }, [attribute?.id, attribute?.type]);
 
   useEffect(() => {
     const container = readOnlyEnumTableContainerRef.current;
@@ -553,7 +554,7 @@ const AttributeWorkspace: React.FC<AttributeWorkspaceProps> = ({
     );
   }
 
-  const handleFormChange = (changedValues: any) => {
+  const handleFormChange = (changedValues: AttributeFormChangeMap) => {
     if (attribute && "type" in changedValues) {
       const nextType = changedValues.type as AttributeType;
       const nextDefaultValue = normalizeDefaultValueForType(
@@ -577,20 +578,20 @@ const AttributeWorkspace: React.FC<AttributeWorkspaceProps> = ({
       .validateFields()
       .then(async () => {
         if (attribute && ((saveAndNext && onSaveAndNext) || (!saveAndNext && onSave))) {
-          setSaveStatus("loading");
+          setSaveStatusState({ attributeId: attribute.id, status: "loading" });
           try {
              if (saveAndNext && onSaveAndNext) {
                await onSaveAndNext(attribute);
              } else if (onSave) {
                await onSave(attribute);
-               setIsEditing(false);
+               setEditingAttributeId(null);
              }
-             setSaveStatus("success");
-             setTimeout(() => setSaveStatus("idle"), 2000);
-          } catch (e: any) {
-             setSaveStatus("idle");
+             setSaveStatusState({ attributeId: attribute.id, status: "success" });
+             setTimeout(() => setSaveStatusState({ attributeId: attribute.id, status: "idle" }), 2000);
+           } catch (error) {
+             setSaveStatusState({ attributeId: attribute.id, status: "idle" });
              // Error handling should be done by onSave or global message
-             const errorMsg = e?.message || e?.error || "";
+             const errorMsg = getErrorMessage(error);
              if (errorMsg.includes("attribute already exists")) {
                form.setFields([
                  {
@@ -601,9 +602,9 @@ const AttributeWorkspace: React.FC<AttributeWorkspaceProps> = ({
              }
           }
         } else {
-             setIsEditing(false);
-             setSaveStatus("success");
-             setTimeout(() => setSaveStatus("idle"), 2000);
+             setEditingAttributeId(null);
+             setSaveStatusState({ attributeId: attribute.id, status: "success" });
+             setTimeout(() => setSaveStatusState({ attributeId: attribute.id, status: "idle" }), 2000);
         }
       })
       .catch((info) => {
@@ -629,7 +630,7 @@ const AttributeWorkspace: React.FC<AttributeWorkspaceProps> = ({
       });
     } else {
       onCancelEdit?.();
-      setIsEditing(false);
+      setEditingAttributeId(null);
     }
   };
 
@@ -679,7 +680,7 @@ const AttributeWorkspace: React.FC<AttributeWorkspaceProps> = ({
             icon={<EditOutlined />}
             onClick={() => {
               if (!attribute) return;
-              setIsEditing(true);
+              setEditingAttributeId(attribute.id);
             }}
           >
             编辑 (Edit)
@@ -1121,7 +1122,7 @@ const AttributeWorkspace: React.FC<AttributeWorkspaceProps> = ({
                             vertical
                             gap={8}
                             onMouseLeave={() => {
-                              setNumericDefaultSliderOpen(false);
+                              setNumericDefaultSliderOpenFor(null);
                             }}
                           >
                             <InputNumber
@@ -1139,7 +1140,7 @@ const AttributeWorkspace: React.FC<AttributeWorkspaceProps> = ({
                                   typeof attribute.max === "number" &&
                                   attribute.max > attribute.min
                                 ) {
-                                  setNumericDefaultSliderOpen(true);
+                                  setNumericDefaultSliderOpenFor(numericDefaultSliderContextKey);
                                 }
                               }}
                               onClick={() => {
@@ -1148,7 +1149,7 @@ const AttributeWorkspace: React.FC<AttributeWorkspaceProps> = ({
                                   typeof attribute.max === "number" &&
                                   attribute.max > attribute.min
                                 ) {
-                                  setNumericDefaultSliderOpen(true);
+                                  setNumericDefaultSliderOpenFor(numericDefaultSliderContextKey);
                                 }
                               }}
                               onChange={(value) => {
@@ -1234,9 +1235,10 @@ const AttributeWorkspace: React.FC<AttributeWorkspaceProps> = ({
                               >
                                 <Space>
                                   {opt.image && (
-                                    <img
+                                    <Image
                                       src={opt.image}
                                       alt={opt.value}
+                                      preview={false}
                                       style={{
                                         width: 16,
                                         height: 16,
@@ -1395,12 +1397,6 @@ const AttributeWorkspace: React.FC<AttributeWorkspaceProps> = ({
   );
 
   const renderValueDomain = () => {
-    // Helper to update attribute type
-    const handleTypeChange = (newType: AttributeType) => {
-      onUpdate("type", newType);
-      form.setFieldValue("type", newType);
-    };
-
     // Helper to update specific fields
     const updateAttribute = (updates: Partial<AttributeItem>) => {
       Object.entries(updates).forEach(([key, value]) => {
@@ -1588,13 +1584,17 @@ const AttributeWorkspace: React.FC<AttributeWorkspaceProps> = ({
       }, 100);
     };
 
-    const handleContextMenu = (params: any) => {
+    const handleContextMenu = (params: CellContextMenuEvent<EnumOptionItem>) => {
+      if (!(params.event instanceof MouseEvent)) {
+        return;
+      }
+
       params.event.preventDefault();
       setContextMenu({
         open: true,
         x: params.event.clientX,
         y: params.event.clientY,
-        record: params.data,
+        record: params.data ?? null,
       });
     };
 

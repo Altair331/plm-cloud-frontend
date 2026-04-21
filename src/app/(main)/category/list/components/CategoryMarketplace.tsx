@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Typography, Checkbox, Button, List, Tag, Empty, Input, Space, Badge, Statistic, Tooltip, Select, Spin, Breadcrumb, Modal, Splitter, Tree, App } from 'antd';
-import { ShoppingCartOutlined, PlusOutlined, DeleteOutlined, SearchOutlined, EditOutlined, AppstoreOutlined, DatabaseOutlined, ArrowRightOutlined, FolderOutlined } from '@ant-design/icons';
+import { Typography, Checkbox, Button, List, Tag, Empty, Input, Space, Badge, Statistic, Tooltip, Spin, Breadcrumb, Splitter, Tree, App } from 'antd';
+import { ShoppingCartOutlined, PlusOutlined, DeleteOutlined, SearchOutlined, EditOutlined, AppstoreOutlined, ArrowRightOutlined, FolderOutlined } from '@ant-design/icons';
 import { ProCard } from '@ant-design/pro-components';
 import type { DataNode, TreeProps } from 'antd/es/tree';
 import DraggableModal from '../../../../../components/DraggableModal';
@@ -8,7 +8,6 @@ import { lightPalette } from '../../../../../styles/colors';
 
 import { LIBRARIES, MOCK_DB, MOCK_ATTRIBUTES, type CategoryItem, type MillerNode } from '../mockData';
 import { metaCategoryApi } from '../../../../../services/metaCategory';
-import MillerColumns from './MillerColumns';
 import CategoryBrowser from './CategoryBrowser';
 
 const { Title, Text } = Typography;
@@ -37,7 +36,7 @@ const CategoryMarketplace: React.FC<CategoryMarketplaceProps> = ({ open, onCance
   const [cart, setCart] = useState<CartItem[]>([]);
   
   // 2. 搜索与浏览状态
-  const [selectedLibrary, setSelectedLibrary] = useState<string>('GB');
+  const selectedLibrary: string = 'GB';
   const [searchResults, setSearchResults] = useState<CategoryItem[]>([]);
   const [isSearching, setIsSearching] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -45,7 +44,6 @@ const CategoryMarketplace: React.FC<CategoryMarketplaceProps> = ({ open, onCance
   // 3. 当前选中的分类 (配置区)
   const [activeCategory, setActiveCategory] = useState<CategoryItem | null>(null);
   const [checkedAttributes, setCheckedAttributes] = useState<string[]>([]);
-  const [selectedMillerPath, setSelectedMillerPath] = useState<string[]>([]);
 
   // Handler for CategoryBrowser selection (Leaf node)
   const handleBrowserSelect = (node: MillerNode) => {
@@ -61,24 +59,6 @@ const CategoryMarketplace: React.FC<CategoryMarketplaceProps> = ({ open, onCance
       library: 'UNSPSC'
     };
     handleSelectCategory(categoryItem);
-  };
-
-  const handleMillerSelect = (node: MillerNode, level: number) => {
-    // Update selected path
-    const newPath = selectedMillerPath.slice(0, level);
-    newPath.push(node.key);
-    setSelectedMillerPath(newPath);
-
-    if (node.isLeaf) {
-      const categoryItem: CategoryItem = {
-        key: node.key,
-        title: node.title,
-        code: node.code,
-        path: ['UNSPSC', node.title],
-        library: 'UNSPSC'
-      };
-      handleSelectCategory(categoryItem);
-    }
   };
 
   // 4. Stage 2 状态
@@ -173,7 +153,7 @@ const CategoryMarketplace: React.FC<CategoryMarketplaceProps> = ({ open, onCance
       // 重置 Stage
       setStage(0);
     }
-  }, [open]);
+  }, [message, open]);
 
   // 自动保存
   useEffect(() => {
@@ -181,17 +161,6 @@ const CategoryMarketplace: React.FC<CategoryMarketplaceProps> = ({ open, onCance
       localStorage.setItem(STORAGE_KEY, JSON.stringify(cart));
     }
   }, [cart, open, stage]);
-
-  const handleLibraryChange = (value: string) => {
-    setSelectedLibrary(value);
-    // 切换库后重置搜索结果，或者自动触发一次空搜索
-    setIsSearching(true);
-    setTimeout(() => {
-      const source = MOCK_DB[value] || [];
-      setSearchResults(source); // 显示全部或前N条
-      setIsSearching(false);
-    }, 300);
-  };
 
   const handleSelectCategory = (item: CategoryItem) => {
     setActiveCategory(item);
@@ -396,9 +365,10 @@ const CategoryMarketplace: React.FC<CategoryMarketplaceProps> = ({ open, onCance
       });
       setAutoExpandParent(true);
     } else if (
-      ((info.node as any).props.children || []).length > 0 && // Has children
-      (info.node as any).expanded && // Is expanded
-      dropPosition === 1 // On the bottom gap
+      Array.isArray(info.node.children) &&
+      info.node.children.length > 0 &&
+      info.node.expanded &&
+      dropPosition === 1
     ) {
       loop(data, dropKey, (item) => {
         item.children = item.children || [];

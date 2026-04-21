@@ -47,7 +47,7 @@ const quillFormats = [
 export interface CreateCategoryModalProps {
   open: boolean;
   onCancel: () => void;
-  onOk: (values: any) => Promise<void> | void;
+  onOk: (values: CreateCategorySubmitValues) => Promise<void> | void;
   parentNode?: {
     id?: string | null;
     code?: string;
@@ -61,6 +61,32 @@ export interface CreateCategoryModalProps {
   submitLoading?: boolean;
   defaultBusinessDomain?: string;
 }
+
+interface CreateCategorySubmitValues {
+  code?: string;
+  name: string;
+  businessDomain: string;
+  parentId?: string | null;
+  status: 'CREATED' | 'EFFECTIVE' | 'INVALID';
+  description?: string;
+  generationMode?: 'MANUAL';
+  freezeCode?: undefined;
+  parentDisplay?: string;
+  rootDisplay?: string;
+}
+
+interface ErrorWithMessage {
+  message?: string;
+  error?: string;
+}
+
+const getErrorMessage = (error: unknown, fallback: string) => {
+  if (error && typeof error === 'object') {
+    const candidate = error as ErrorWithMessage;
+    return candidate.message || candidate.error || fallback;
+  }
+  return fallback;
+};
 
 const CreateCategoryModal: React.FC<CreateCategoryModalProps> = ({
   open,
@@ -77,9 +103,7 @@ const CreateCategoryModal: React.FC<CreateCategoryModalProps> = ({
   const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const previewRequestIdRef = useRef(0);
   const suggestedCodeRef = useRef('');
-  const [previewLoading, setPreviewLoading] = useState(false);
-  const [allowManualOverride, setAllowManualOverride] = useState(false);
-  const [previewWarnings, setPreviewWarnings] = useState<string[]>([]);
+  const allowManualOverrideRef = useRef(false);
   const [codeManuallyEdited, setCodeManuallyEdited] = useState(false);
 
   useEffect(() => {
@@ -89,6 +113,7 @@ const CreateCategoryModal: React.FC<CreateCategoryModalProps> = ({
   const watchedBusinessDomain = Form.useWatch('businessDomain', form) as string | undefined;
   const watchedParentId = Form.useWatch('parentId', form) as string | undefined;
   const watchedCode = Form.useWatch('code', form) as string | undefined;
+  const hasManualCode = codeManuallyEdited && String(watchedCode || '').trim().length > 0;
 
   const businessDomainEntries = getEntries(CATEGORY_BUSINESS_DOMAIN_DICT_CODE);
   const statusEntries = getEntries('META_CATEGORY_STATUS').filter((entry) =>
@@ -123,10 +148,8 @@ const CreateCategoryModal: React.FC<CreateCategoryModalProps> = ({
       status: 'CREATED',
       description: EMPTY_QUILL_DELTA_JSON,
     });
-    setAllowManualOverride(false);
-    setPreviewWarnings([]);
-    setCodeManuallyEdited(false);
-  }, [open, parentNode, form, defaultBusinessDomain]);
+    allowManualOverrideRef.current = false;
+  }, [activeBusinessDomain, form, open, parentNode]);
 
   useEffect(() => {
     if (!open) {
@@ -134,7 +157,6 @@ const CreateCategoryModal: React.FC<CreateCategoryModalProps> = ({
         clearTimeout(previewTimerRef.current);
         previewTimerRef.current = null;
       }
-      setPreviewLoading(false);
       return;
     }
 
@@ -150,52 +172,44 @@ const CreateCategoryModal: React.FC<CreateCategoryModalProps> = ({
     previewTimerRef.current = setTimeout(async () => {
       const requestId = ++previewRequestIdRef.current;
       const currentCode = String(watchedCode || '').trim();
-      const manualCode = codeManuallyEdited ? currentCode : '';
-      if (codeManuallyEdited && !manualCode) {
-        setCodeManuallyEdited(false);
-        setPreviewWarnings([]);
-        setPreviewLoading(false);
-        return;
-      }
+      const manualCode = hasManualCode ? currentCode : '';
 
-      setPreviewLoading(true);
       try {
         const preview = await metaCategoryApi.previewCreateCode({
           businessDomain,
           parentId: watchedParentId || undefined,
-          manualCode: codeManuallyEdited ? manualCode : undefined,
+          manualCode: hasManualCode ? manualCode : undefined,
           count: 1,
         });
         if (requestId !== previewRequestIdRef.current) {
           return;
         }
 
-        setAllowManualOverride(Boolean(preview.allowManualOverride));
-        setPreviewWarnings(preview.warnings || []);
+        allowManualOverrideRef.current = Boolean(preview.allowManualOverride);
 
-        if (!codeManuallyEdited) {
+        if (!hasManualCode) {
           suggestedCodeRef.current = preview.suggestedCode || '';
+          setCodeManuallyEdited(false);
           form.setFieldValue('code', preview.suggestedCode || '');
         }
 
-        if (codeManuallyEdited && !preview.allowManualOverride) {
-          setCodeManuallyEdited(false);
+        if (hasManualCode && !preview.allowManualOverride) {
           form.setFieldValue('code', suggestedCodeRef.current || preview.suggestedCode || '');
+          setCodeManuallyEdited(false);
         }
-      } catch (error: any) {
+      } catch (error) {
         if (requestId !== previewRequestIdRef.current) {
           return;
         }
-        setPreviewWarnings([error?.message || error?.error || '分类编码预计算失败']);
-        if (!codeManuallyEdited) {
+        if (!hasManualCode) {
           form.setFieldValue('code', '');
         }
-      } finally {
-        if (requestId === previewRequestIdRef.current) {
-          setPreviewLoading(false);
-        }
+        modal.warning({
+          title: '分类编码预计算失败',
+          content: getErrorMessage(error, '分类编码预计算失败'),
+        });
       }
-    }, codeManuallyEdited ? 300 : 0);
+    }, hasManualCode ? 300 : 0);
 
     return () => {
       if (previewTimerRef.current) {
@@ -203,11 +217,11 @@ const CreateCategoryModal: React.FC<CreateCategoryModalProps> = ({
         previewTimerRef.current = null;
       }
     };
-  }, [open, watchedBusinessDomain, watchedParentId, watchedCode, codeManuallyEdited, form]);
+  }, [form, hasManualCode, modal, open, watchedBusinessDomain, watchedCode, watchedParentId]);
 
-  const handleFinish = async (values: any) => {
+  const handleFinish = async (values: CreateCategorySubmitValues) => {
     const normalizedCode = String(values.code || '').trim();
-    const manualOverride = codeManuallyEdited && normalizedCode.length > 0 && allowManualOverride;
+    const manualOverride = hasManualCode && normalizedCode.length > 0 && allowManualOverrideRef.current;
     await onOk({
       ...values,
       code: manualOverride ? normalizedCode : undefined,
@@ -215,9 +229,7 @@ const CreateCategoryModal: React.FC<CreateCategoryModalProps> = ({
       freezeCode: undefined,
     });
     form.resetFields();
-    setAllowManualOverride(false);
-    setPreviewWarnings([]);
-    setCodeManuallyEdited(false);
+    allowManualOverrideRef.current = false;
     suggestedCodeRef.current = '';
   };
 
@@ -236,9 +248,7 @@ const CreateCategoryModal: React.FC<CreateCategoryModalProps> = ({
       okType: 'danger',
       onOk: () => {
         form.resetFields();
-        setAllowManualOverride(false);
-        setPreviewWarnings([]);
-        setCodeManuallyEdited(false);
+        allowManualOverrideRef.current = false;
         suggestedCodeRef.current = '';
         onCancel();
       },
@@ -292,7 +302,9 @@ const CreateCategoryModal: React.FC<CreateCategoryModalProps> = ({
                   <Input
                     onChange={(event) => {
                       const nextCode = event.target.value.trim();
-                      setCodeManuallyEdited(nextCode.length > 0 && nextCode !== suggestedCodeRef.current);
+                      setCodeManuallyEdited(
+                        nextCode.length > 0 && nextCode !== suggestedCodeRef.current,
+                      );
                     }}
                   />
                 </Form.Item>

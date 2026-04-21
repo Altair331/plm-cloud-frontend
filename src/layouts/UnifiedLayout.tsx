@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Breadcrumb, Button, ConfigProvider, Tabs, theme } from "antd";
+import { Button, ConfigProvider, Tabs, theme } from "antd";
 import type { TabsProps } from "antd";
 import dynamic from 'next/dynamic';
 const ProLayout = dynamic(() => import('@ant-design/pro-components').then(mod => mod.ProLayout), { ssr: false });
@@ -99,16 +99,18 @@ const UnifiedLayout: React.FC<UnifiedLayoutProps> = ({
   const currentPath = pathname === "/" ? homePath : pathname;
 
   const [collapsed, setCollapsed] = useState(false);
-  const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
+  const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
+    if (typeof window === "undefined") {
+      return false;
+    }
 
-  useEffect(() => {
     const stored = window.localStorage.getItem("plm-theme-mode");
     if (stored) {
-      setIsDarkMode(stored === "dark");
-    } else {
-      setIsDarkMode(window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false);
+      return stored === "dark";
     }
-  }, []);
+
+    return window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
+  });
 
   const matchedMenuPath = useMemo(
     () => findMenuPath(menuData, currentPath) ?? [],
@@ -136,7 +138,7 @@ const UnifiedLayout: React.FC<UnifiedLayoutProps> = ({
     breadcrumbTrail[breadcrumbTrail.length - 1]?.name ??
     normalizeLabelFromPath(currentPath, homePath, homeTitle);
 
-  const [tabs, setTabs] = useState<RouteTab[]>(() => {
+  const [openedTabs, setOpenedTabs] = useState<RouteTab[]>(() => {
     const initial: RouteTab[] = [
       { key: homePath, label: homeTitle, closable: false },
     ];
@@ -151,41 +153,32 @@ const UnifiedLayout: React.FC<UnifiedLayoutProps> = ({
     [isDarkMode]
   );
 
-  const breadcrumbItems = useMemo(
-    () =>
-      breadcrumbTrail.map((item, index) => ({
-        key: item.path,
-        title:
-          index === breadcrumbTrail.length - 1 ? (
-            <span style={{ color: palette.menuTextSelected, fontWeight: 600 }}>
-              {item.name}
-            </span>
-          ) : (
-            <a
-              onClick={(event) => {
-                event.preventDefault();
-                router.push(item.path);
-              }}
-            >
-              {item.name}
-            </a>
-          ),
-      })),
-    [breadcrumbTrail, router, palette]
-  );
-
   const handleTabChange = (key: string) => {
     if (key !== currentPath) {
       router.push(key);
     }
   };
 
+  const handleMenuNavigate = useCallback(
+    (targetPath: string) => {
+      const matchedItems = findMenuPath(menuData, targetPath);
+      const targetItem = matchedItems?.[matchedItems.length - 1];
+
+      if (!targetItem?.path || targetItem.disabled || targetItem.path === currentPath) {
+        return;
+      }
+
+      router.push(targetItem.path);
+    },
+    [currentPath, menuData, router],
+  );
+
   const handleTabRemove = useCallback(
     (targetKey: string) => {
       if (targetKey === homePath) {
         return;
       }
-      setTabs((prev) => {
+      setOpenedTabs((prev) => {
         const next = prev.filter((tab) => tab.key !== targetKey);
         if (next.length === prev.length) {
           return prev;
@@ -250,11 +243,39 @@ const UnifiedLayout: React.FC<UnifiedLayoutProps> = ({
     []
   );
 
+  const tabs = useMemo<RouteTab[]>(() => {
+    const next = [...openedTabs];
+
+    if (!next.some((tab) => tab.key === homePath)) {
+      next.unshift({ key: homePath, label: homeTitle, closable: false });
+    }
+
+    const currentIndex = next.findIndex((tab) => tab.key === currentPath);
+    if (currentIndex >= 0) {
+      const currentTab = next[currentIndex];
+      if (currentTab.label !== activeLabel) {
+        next[currentIndex] = { ...currentTab, label: activeLabel };
+      }
+      return next;
+    }
+
+    next.push({
+      key: currentPath,
+      label: activeLabel,
+      closable: currentPath !== homePath,
+    });
+
+    return next;
+  }, [activeLabel, currentPath, homePath, homeTitle, openedTabs]);
+
   useEffect(() => {
+    const resizeObservers = tabResizeObservers.current;
+    const textRefs = tabTextRefs.current;
+
     return () => {
-      tabResizeObservers.current.forEach((observer) => observer.disconnect());
-      tabResizeObservers.current.clear();
-      tabTextRefs.current.clear();
+      resizeObservers.forEach((observer) => observer.disconnect());
+      resizeObservers.clear();
+      textRefs.clear();
     };
   }, []);
 
@@ -304,29 +325,6 @@ const UnifiedLayout: React.FC<UnifiedLayoutProps> = ({
       router.replace(homePath);
     }
   }, [pathname, router, homePath]);
-
-  useEffect(() => {
-    setTabs((prev) => {
-      const next = [...prev];
-      if (!next.some((tab) => tab.key === homePath)) {
-        next.unshift({ key: homePath, label: homeTitle, closable: false });
-      }
-      const index = next.findIndex((tab) => tab.key === currentPath);
-      if (index >= 0) {
-        const existing = next[index];
-        if (existing.label !== activeLabel) {
-          next[index] = { ...existing, label: activeLabel };
-        }
-        return next;
-      }
-      next.push({
-        key: currentPath,
-        label: activeLabel,
-        closable: currentPath !== homePath,
-      });
-      return next;
-    });
-  }, [currentPath, activeLabel, homePath, homeTitle]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -442,7 +440,7 @@ const UnifiedLayout: React.FC<UnifiedLayoutProps> = ({
         components: currentComponentTokens,
       }}
     >
-      <AntdApp {...({ suppressHydrationWarning: true } as any)}>
+      <AntdApp>
       <ProLayout
         suppressHydrationWarning
         title={title}
@@ -500,7 +498,7 @@ const UnifiedLayout: React.FC<UnifiedLayoutProps> = ({
             )}
           </div>
         )}
-        location={{ pathname }}
+        location={{ pathname: currentPath }}
         menuDataRender={() => menuData}
         menuItemRender={(item, dom) => {
           // 默认菜单项保持原始渲染链路，避免再次影响收起态 icon 显示。
@@ -513,11 +511,6 @@ const UnifiedLayout: React.FC<UnifiedLayoutProps> = ({
             <span
               onMouseDown={(event) => {
                 event.preventDefault();
-              }}
-              onClick={() => {
-                if (item.path && !item.disabled) {
-                  router.push(item.path);
-                }
               }}
               style={{
                 display: 'flex',
@@ -549,6 +542,9 @@ const UnifiedLayout: React.FC<UnifiedLayoutProps> = ({
             paddingTop: 8,
             paddingBottom: 8,
             backgroundColor: palette.siderBg,
+          },
+          onClick: ({ key }) => {
+            handleMenuNavigate(String(key));
           },
         }}
         // header 高度通过 token.header.heightLayoutHeader 控制

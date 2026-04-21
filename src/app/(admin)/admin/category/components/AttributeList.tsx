@@ -23,6 +23,7 @@ import {
   theme,
 } from "antd";
 import type { TableColumnsType } from "antd";
+import type { CheckboxChangeEvent } from 'antd/es/checkbox';
 import {
   AddCircleOutline,
   DeleteOutline,
@@ -89,15 +90,8 @@ const getTypeLabel = (type: AttributeType | string) => {
   }
 };
 
-const LEFT_INDICATOR_WIDTH = 4;
-const CHECKBOX_COL_WIDTH = 32;
-const INDEX_COL_WIDTH = 30;
-const TYPE_COL_WIDTH = 100;
-const STATUS_COL_WIDTH = 44;
-const HORIZONTAL_PADDING = 16;
 const ACTION_COL_RESERVED_WIDTH = 40;
 const ATTRIBUTE_INDEX_COL_WIDTH = 40;
-const ATTRIBUTE_META_COL_WIDTH = 112;
 const ATTRIBUTE_CHECKBOX_COL_WIDTH = 48;
 
 type AttributeColumnKey = 'name' | 'attributeField' | 'type';
@@ -269,18 +263,13 @@ const AttributeList: React.FC<AttributeListProps> = ({
     }
   }, [activeAttributeId, dataSource.length]);
 
-  useEffect(() => {
-    if (searchText) {
-      setSearchExpanded(true);
-    }
-  }, [searchText]);
-
   const filteredData = dataSource.filter(
     (item) =>
       item.name.toLowerCase().includes(searchText.toLowerCase()) ||
       item.code.toLowerCase().includes(searchText.toLowerCase()) ||
       item.attributeField?.toLowerCase().includes(searchText.toLowerCase()),
   );
+  const resolvedSearchExpanded = searchExpanded || Boolean(searchText);
 
   const [anchorRowId, setAnchorRowId] = useState<string | null>(null);
   const [contextMenuState, setContextMenuState] = useState<{
@@ -292,12 +281,10 @@ const AttributeList: React.FC<AttributeListProps> = ({
   }>({ open: false, x: 0, y: 0, target: "blank", item: null });
   const [contextMenuRowId, setContextMenuRowId] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!anchorRowId) return;
-    if (!dataSource.some((item) => item.id === anchorRowId)) {
-      setAnchorRowId(null);
-    }
-  }, [anchorRowId, dataSource]);
+  const resolvedAnchorRowId = useMemo(
+    () => (anchorRowId && dataSource.some((item) => item.id === anchorRowId) ? anchorRowId : null),
+    [anchorRowId, dataSource],
+  );
 
   const selectedRowKeys = selectedAttributeIds;
   const singleSelectedAttribute = useMemo(() => {
@@ -309,7 +296,7 @@ const AttributeList: React.FC<AttributeListProps> = ({
     return dataSource.find((item) => item.id === selectedId) || null;
   }, [dataSource, selectedRowKeys]);
 
-  const emitSelectionChange = (ids: string[], primaryId: string | null) => {
+  const emitSelectionChange = useCallback((ids: string[], primaryId: string | null) => {
     const normalizedIds = Array.from(new Set(ids));
     const nextPrimary =
       normalizedIds.length === 1 && primaryId && normalizedIds.includes(primaryId)
@@ -318,7 +305,7 @@ const AttributeList: React.FC<AttributeListProps> = ({
           ? normalizedIds[0]
           : null;
     onSelectionChange(normalizedIds, nextPrimary);
-  };
+  }, [onSelectionChange]);
 
   const handleExplorerSelect = (clickedId: string, event: React.MouseEvent) => {
     const visibleIds = filteredData.map((item) => item.id);
@@ -331,8 +318,8 @@ const AttributeList: React.FC<AttributeListProps> = ({
     const currentSet = new Set(current);
     let nextSelection: string[] = [];
 
-    if (isShift && anchorRowId && visibleIds.includes(anchorRowId)) {
-      const anchorIndex = visibleIds.indexOf(anchorRowId);
+    if (isShift && resolvedAnchorRowId && visibleIds.includes(resolvedAnchorRowId)) {
+      const anchorIndex = visibleIds.indexOf(resolvedAnchorRowId);
       const [start, end] =
         anchorIndex <= clickedIndex
           ? [anchorIndex, clickedIndex]
@@ -357,18 +344,18 @@ const AttributeList: React.FC<AttributeListProps> = ({
     emitSelectionChange(nextSelection, nextSelection.length === 1 ? clickedId : null);
   };
 
-  const handleSelectAll = (e: any) => {
+  const handleSelectAll = useCallback((event: CheckboxChangeEvent) => {
     const visibleIds = filteredData.map((item) => item.id);
     const current = selectedRowKeys.map((key) => String(key));
-    if (e.target.checked) {
+    if (event.target.checked) {
       emitSelectionChange(Array.from(new Set([...current, ...visibleIds])), null);
     } else {
       const visibleSet = new Set(visibleIds);
       emitSelectionChange(current.filter((id) => !visibleSet.has(id)), null);
     }
-  };
+  }, [emitSelectionChange, filteredData, selectedRowKeys]);
 
-  const handleSelectRow = (id: string, checked: boolean) => {
+  const handleSelectRow = useCallback((id: string, checked: boolean) => {
     const current = selectedRowKeys.map((key) => String(key));
     if (checked) {
       emitSelectionChange([...current, id], null);
@@ -376,21 +363,21 @@ const AttributeList: React.FC<AttributeListProps> = ({
       emitSelectionChange(current.filter((key) => key !== id), null);
     }
     setAnchorRowId(id);
-  };
+  }, [emitSelectionChange, selectedRowKeys]);
 
-  const handleDuplicate = (item: AttributeItem) => {
+  const handleDuplicate = useCallback((item: AttributeItem) => {
     onDuplicateAttribute?.(item);
-  };
+  }, [onDuplicateAttribute]);
 
-  const handleDelete = (item: AttributeItem) => {
+  const handleDelete = useCallback((item: AttributeItem) => {
     if (onDeleteAttribute) {
       onDeleteAttribute(item);
     } else {
       setDataSource(dataSource.filter((d) => d.id !== item.id));
     }
-  };
+  }, [dataSource, onDeleteAttribute, setDataSource]);
 
-  const getMenuItems = (item: AttributeItem): MenuProps["items"] => [
+  const getMenuItems = useCallback((item: AttributeItem): MenuProps["items"] => [
     {
       key: "duplicate",
       label: "复制 (Duplicate)",
@@ -413,9 +400,9 @@ const AttributeList: React.FC<AttributeListProps> = ({
         handleDelete(item);
       },
     },
-  ];
+  ], [handleDelete, handleDuplicate]);
 
-  const handleToolbarBatchDelete = () => {
+  const handleToolbarBatchDelete = useCallback(() => {
     const ids = selectedRowKeys.map((key) => String(key));
     if (ids.length === 0) return;
 
@@ -425,15 +412,15 @@ const AttributeList: React.FC<AttributeListProps> = ({
       setDataSource(dataSource.filter((d) => !ids.includes(d.id)));
     }
     emitSelectionChange([], null);
-  };
+  }, [dataSource, emitSelectionChange, onBatchRemoveAttributes, selectedRowKeys, setDataSource]);
 
-  const handleToolbarDuplicate = () => {
+  const handleToolbarDuplicate = useCallback(() => {
     if (!singleSelectedAttribute) {
       return;
     }
 
     handleDuplicate(singleSelectedAttribute);
-  };
+  }, [handleDuplicate, singleSelectedAttribute]);
 
   const handleColumnResize = useCallback((columnKey: AttributeColumnKey, nextShare: number) => {
     setColumnShares((prev) => distributeDeltaAcrossAttributeColumns(prev, columnKey, nextShare));
@@ -454,7 +441,7 @@ const AttributeList: React.FC<AttributeListProps> = ({
       target: "row",
       item,
     });
-  }, [selectedRowKeys]);
+  }, [emitSelectionChange, selectedRowKeys]);
 
   const handleCheckableToggle = useCallback(() => {
     const nextCheckableEnabled = !checkableEnabled;
@@ -463,19 +450,19 @@ const AttributeList: React.FC<AttributeListProps> = ({
     if (!nextCheckableEnabled && selectedRowKeys.length > 1) {
       emitSelectionChange(activeAttributeId ? [activeAttributeId] : [], activeAttributeId);
     }
-  }, [activeAttributeId, checkableEnabled, selectedRowKeys]);
+  }, [activeAttributeId, checkableEnabled, emitSelectionChange, selectedRowKeys]);
 
   const toolbarState = useMemo<BaseToolbarState>(() => ({
     checkableEnabled,
     checkedKeys: selectedRowKeys,
     checkedCount: selectedRowKeys.length,
     searchValue: searchText,
-    searchExpanded,
+    searchExpanded: resolvedSearchExpanded,
     onSearchChange: (e: React.ChangeEvent<HTMLInputElement>) => onSearchTextChange(e.target.value),
     onSearchVisibilityChange: setSearchExpanded,
     onSearchClear: () => onSearchTextChange(''),
     onCheckableToggle: handleCheckableToggle,
-  }), [checkableEnabled, handleCheckableToggle, onSearchTextChange, searchExpanded, searchText, selectedRowKeys]);
+  }), [checkableEnabled, handleCheckableToggle, onSearchTextChange, resolvedSearchExpanded, searchText, selectedRowKeys]);
 
   const primaryActions = useMemo<ToolbarAction[]>(() => [
     {
@@ -496,7 +483,7 @@ const AttributeList: React.FC<AttributeListProps> = ({
       onClick: handleToolbarBatchDelete,
       disabled: selectedRowKeys.length === 0,
     },
-  ], [selectedRowKeys.length]);
+  ], [handleToolbarBatchDelete, selectedRowKeys.length]);
 
   const trailingActions = useMemo<ToolbarAction[]>(() => [
     {
@@ -681,6 +668,7 @@ const AttributeList: React.FC<AttributeListProps> = ({
     getMenuItems,
     handleColumnResize,
     handleSelectAll,
+    handleSelectRow,
     selectedRowKeys,
     tableData.length,
     token.colorTextQuaternary,

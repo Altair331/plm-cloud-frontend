@@ -74,7 +74,7 @@ export interface CodeRuleSummaryDto {
   latestRuleJson?: CodeRuleJsonDto;
 }
 
-export interface CodeRuleDetailDto extends CodeRuleSummaryDto {}
+export type CodeRuleDetailDto = CodeRuleSummaryDto;
 
 export interface CodeRuleSaveRequestDto {
   businessDomain: string;

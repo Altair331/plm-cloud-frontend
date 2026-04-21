@@ -289,7 +289,7 @@ const WorkspaceCreationOnboarding: React.FC = () => {
     return () => {
       active = false;
     };
-  }, [router, setupForm]);
+  }, [message, router, setupForm]);
 
   const workspaceTypeOptions: WorkspaceTypeOption[] = useMemo(
     () => [...(bootstrapOptions?.workspaceTypes ?? [])]

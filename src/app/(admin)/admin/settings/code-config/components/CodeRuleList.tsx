@@ -9,7 +9,6 @@ import type {
   ColumnShareMap,
 } from './types';
 import {
-  COLUMN_KEYS,
   MIN_COLUMN_SHARE,
   DEFAULT_COLUMN_SHARES,
   CHECKBOX_COL_WIDTH,

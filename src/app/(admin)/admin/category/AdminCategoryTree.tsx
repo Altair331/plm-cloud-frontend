@@ -45,6 +45,28 @@ interface AdminCategoryTreeProps extends CategoryTreeProps {
   ) => void;
 }
 
+interface CategoryNodeDataRef {
+  id?: string | null;
+  code?: string;
+  name?: string;
+  level?: number;
+  path?: string;
+  status?: string;
+  businessDomain?: string;
+}
+
+type CategoryMenuNode = DataNode & {
+  dataRef?: CategoryNodeDataRef;
+};
+
+const getErrorMessage = (error: unknown, fallback: string) => {
+  if (error && typeof error === "object") {
+    const candidate = error as { message?: string; error?: string };
+    return candidate.message || candidate.error || fallback;
+  }
+  return fallback;
+};
+
 type CategorySemanticStatus = "CREATED" | "EFFECTIVE" | "INVALID";
 
 const normalizeCategoryStatus = (status?: string): CategorySemanticStatus => {
@@ -125,9 +147,8 @@ const AdminCategoryTree: React.FC<AdminCategoryTreeProps> = ({
     node: DataNode | null,
   ): MenuProps["items"] => {
     if (!node) return [];
-    const nodeRef = (node as any)?.dataRef as
-      | { code?: string; name?: string; level?: number }
-      | undefined;
+    const menuNode = node as CategoryMenuNode;
+    const nodeRef = menuNode.dataRef;
     const titleText =
       nodeRef?.code || nodeRef?.name
         ? `${nodeRef?.code || "-"} - ${nodeRef?.name || "未命名分类"}`
@@ -135,7 +156,7 @@ const AdminCategoryTree: React.FC<AdminCategoryTreeProps> = ({
           ? node.title
           : String(node.key);
     const levelText = nodeRef?.level ? `L${nodeRef.level}` : "-";
-    const currentStatus = normalizeCategoryStatus((node as any)?.dataRef?.status);
+    const currentStatus = normalizeCategoryStatus(menuNode.dataRef?.status);
     const transitionTargets = (["CREATED", "EFFECTIVE", "INVALID"] as CategorySemanticStatus[])
       .filter((status) => status !== currentStatus);
 
@@ -210,16 +231,7 @@ const AdminCategoryTree: React.FC<AdminCategoryTreeProps> = ({
   };
 
   const openCreateModal = (node?: DataNode | null) => {
-    const nodeRef = (node as any)?.dataRef as
-      | {
-          id?: string;
-          code?: string;
-          name?: string;
-          level?: number;
-          path?: string;
-          businessDomain?: string;
-        }
-      | undefined;
+    const nodeRef = (node as CategoryMenuNode | null | undefined)?.dataRef;
 
     setCreateParentNode(
       nodeRef
@@ -367,10 +379,9 @@ const AdminCategoryTree: React.FC<AdminCategoryTreeProps> = ({
             messageApi.success("分类创建成功");
             setCreateModalVisible(false);
             onCategoryCreated?.(created, createParentNode);
-          } catch (e: any) {
-            const msg = e?.message || e?.error || "分类创建失败";
-            messageApi.error(msg);
-            throw e;
+          } catch (error) {
+            messageApi.error(getErrorMessage(error, "分类创建失败"));
+            throw error;
           } finally {
             setCreateSubmitting(false);
           }

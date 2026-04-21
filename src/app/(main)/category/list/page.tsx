@@ -62,6 +62,9 @@ const CategoryPage: React.FC = () => {
   const handleOpenCreateModal = (parentKey: React.Key | null = null) => {
     setCreateParentKey(parentKey);
     form.resetFields();
+    form.setFieldsValue({
+      code: `CAT-${Date.now()}`,
+    });
     setCreateModalVisible(true);
   };
 
@@ -179,7 +182,6 @@ const CategoryPage: React.FC = () => {
           <Form.Item
             name="code"
             label="分类编码"
-            initialValue={`CAT-${Date.now()}`} // Auto-generate a mock code
           >
             <Input disabled placeholder="自动生成" />
           </Form.Item>

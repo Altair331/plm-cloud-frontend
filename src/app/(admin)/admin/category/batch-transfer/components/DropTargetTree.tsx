@@ -1,12 +1,12 @@
 import React from 'react';
 import { Tree, Input, theme } from 'antd';
-import type { TreeDataNode } from 'antd';
 import { SearchOutlined, FolderOutlined, FolderOpenOutlined, ApartmentOutlined } from '@ant-design/icons';
 import { useDroppable } from '@dnd-kit/core';
 import type { TransferTreeNode } from './TransferWorkspace';
 import { colorToRgba } from './transferNodeStyles';
 
 const { Search } = Input;
+type ThemeToken = ReturnType<typeof theme.useToken>['token'];
 
 interface DropTargetTreeProps {
   treeData: TransferTreeNode[];
@@ -35,7 +35,7 @@ const RootDropTarget = ({
 }: {
   dropKey: React.Key;
   title: string;
-  token: any;
+  token: ThemeToken;
   isHoveringByDnd: boolean;
   disabled?: boolean;
   rootDropTargetRef?: React.RefObject<HTMLDivElement | null>;
@@ -102,7 +102,14 @@ const TargetNodeTitle = ({
   pendingDropKeys = [],
   isHoveringByDnd,
   highlightedPreviewKey,
-}: any) => {
+}: {
+  nodeData: TransferTreeNode;
+  token: ThemeToken;
+  disabledKeys: React.Key[];
+  pendingDropKeys?: React.Key[];
+  isHoveringByDnd: boolean;
+  highlightedPreviewKey?: React.Key | null;
+}) => {
   const isDisabled = disabledKeys.includes(nodeData.key);
   const isPendingTarget = pendingDropKeys.includes(nodeData.key);
   const isPendingPlacement = Boolean(nodeData.isPendingPlacement);
@@ -196,7 +203,6 @@ export default function DropTargetTree({
   hoveredTargetKey,
   rootDropTargetKey,
   rootDropTargetTitle,
-  rootPendingCount = 0,
   rootDropDisabled = false,
   scrollViewportRef,
   rootDropTargetRef,
@@ -204,7 +210,7 @@ export default function DropTargetTree({
 }: DropTargetTreeProps) {
   const { token } = theme.useToken();
 
-  const titleRender = (nodeData: any) => {
+  const titleRender = (nodeData: TransferTreeNode) => {
     return (
       <TargetNodeTitle 
         nodeData={nodeData} 
@@ -236,13 +242,13 @@ export default function DropTargetTree({
         />
         <Tree
           className="drop-target-tree dnd-transfer-tree"
-          treeData={treeData as TreeDataNode[]}
+          treeData={treeData}
           expandedKeys={expandedKeys}
           onExpand={onExpand}
           loadData={loadData ? (node) => loadData(node as unknown as TransferTreeNode) : undefined}
           titleRender={titleRender}
           showIcon
-          icon={(nodeProps: any) => 
+          icon={(nodeProps: { expanded?: boolean }) => 
             nodeProps.expanded ? <FolderOpenOutlined /> : <FolderOutlined />
           }
           blockNode

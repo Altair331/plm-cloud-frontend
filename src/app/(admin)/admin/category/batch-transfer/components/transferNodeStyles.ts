@@ -91,7 +91,6 @@ export const getTransferNodeLabelStyle = (
 };
 
 export const getTransferNodeOverlayShellStyle = (
-  token: TransferNodeStyleToken,
 ): React.CSSProperties => {
   return {
     display: 'inline-flex',

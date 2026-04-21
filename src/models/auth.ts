@@ -212,7 +212,7 @@ export interface AuthPlatformAdminMeResponseDto {
   admin: AuthPlatformAdminSummaryDto;
 }
 
-export interface AuthListWorkspacesResponseDto extends Array<AuthWorkspaceSummaryDto> {}
+export type AuthListWorkspacesResponseDto = AuthWorkspaceSummaryDto[];
 
 export interface AuthCreateWorkspaceRequestDto {
   workspaceName: string;

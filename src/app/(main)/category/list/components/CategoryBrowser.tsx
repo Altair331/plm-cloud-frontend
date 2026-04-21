@@ -1,10 +1,10 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { List, Card, Typography, Space, Button, Tag, Empty, theme, Tabs, Spin } from 'antd';
 import { RightOutlined, LeftOutlined, AppstoreOutlined, ShopOutlined, TagOutlined } from '@ant-design/icons';
 import type { MillerNode } from '../mockData';
 import { metaCategoryApi, type MetaCategoryNodeDto } from '../../../../../services/metaCategory';
 
-const { Title, Text, Paragraph } = Typography;
+const { Title, Text } = Typography;
 
 interface CategoryBrowserProps {
   onSelect: (node: MillerNode) => void;
@@ -103,7 +103,7 @@ const CategoryBrowser: React.FC<CategoryBrowserProps> = ({ onSelect }) => {
     setActiveScope(activeFamily);
     setScopeStack([]);
     setSelectedLeaf(null);
-  }, [activeFamily?.key]);
+  }, [activeFamily]);
 
   // Load right-side classes-with-commodities when scope changes
   useEffect(() => {
@@ -147,8 +147,6 @@ const CategoryBrowser: React.FC<CategoryBrowserProps> = ({ onSelect }) => {
       cancelled = true;
     };
   }, [activeScope?.key]);
-
-  const activeGroup = useMemo(() => groups.find((g) => g.key === activeGroupKey) ?? null, [groups, activeGroupKey]);
 
   // Render Left: Families under active group
   const renderFamiliesSidebar = () => (

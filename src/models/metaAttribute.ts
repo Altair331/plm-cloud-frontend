@@ -25,6 +25,14 @@ export interface MetaAttributeVersionSummaryDto {
   createdAt: string;
 }
 
+export interface MetaAttributeLovValueDto {
+  code?: string | null;
+  value?: string | null;
+  label?: string | null;
+  image?: string | null;
+  order?: number | null;
+}
+
 /**
  * 属性最新版本详情
  */
@@ -66,7 +74,7 @@ export interface MetaAttributeDefDetailDto {
   lovKey: string | null;
   hasLov: boolean;
   versions: MetaAttributeVersionSummaryDto[];
-  lovValues: any[] | null; // 根据实际 LOV 值结构定义，暂时用 any
+  lovValues: MetaAttributeLovValueDto[] | null;
 }
 
 export interface MetaAttributeUpsertRequestDto {

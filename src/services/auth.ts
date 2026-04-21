@@ -1,7 +1,6 @@
 import request from './request';
 import type {
   AuthCreateWorkspaceRequestDto,
-  AuthErrorCode,
   AuthErrorResponseDto,
   AuthLoginResponseDto,
   AuthMeResponseDto,
@@ -22,8 +21,6 @@ import type {
   AuthSwitchWorkspaceRequestDto,
   AuthWorkspaceSessionDto,
   AuthWorkspaceSummaryDto,
-  PlatformAuthState,
-  WorkspaceSessionState,
 } from '@/models/auth';
 
 export type {

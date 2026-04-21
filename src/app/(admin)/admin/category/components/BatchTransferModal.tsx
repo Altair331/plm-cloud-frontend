@@ -20,6 +20,29 @@ interface BatchTransferModalProps {
   defaultBusinessDomain?: string;
 }
 
+interface CategoryNodeDataRef {
+  id?: string;
+  businessDomain?: string;
+  code?: string;
+  name?: string;
+  hasChildren?: boolean;
+  leaf?: boolean;
+  status?: string;
+  level?: number;
+  parentId?: string | null;
+  path?: string | null;
+}
+
+const TRANSFER_MODAL_BODY_HEIGHT = 'calc(100vh - 240px)';
+
+const getErrorMessage = (error: unknown, fallback: string) => {
+  if (error && typeof error === 'object') {
+    const candidate = error as { message?: string; error?: string };
+    return candidate.message || candidate.error || fallback;
+  }
+  return fallback;
+};
+
 const formatNodeTitle = (code?: string | null, name?: string | null, fallback?: string) => {
   if (code && name) {
     return `${code} - ${name}`;
@@ -28,20 +51,7 @@ const formatNodeTitle = (code?: string | null, name?: string | null, fallback?: 
 };
 
 const getNodeDataRef = (node: DataNode) => {
-  return (node as any)?.dataRef as
-    | {
-        id?: string;
-        businessDomain?: string;
-        code?: string;
-        name?: string;
-        hasChildren?: boolean;
-        leaf?: boolean;
-        status?: string;
-        level?: number;
-        parentId?: string | null;
-        path?: string | null;
-      }
-    | undefined;
+  return (node as DataNode & { dataRef?: CategoryNodeDataRef }).dataRef;
 };
 
 const toFallbackTransferNode = (node: DataNode): TransferTreeNode => {
@@ -243,9 +253,9 @@ export default function BatchTransferModal({
         });
 
         setSourceNodesData(buildContextTree(fullTreeData, checkedKeySet, subtreeMap));
-      } catch (error: any) {
+      } catch (error) {
         if (!cancelled) {
-          message.error(error?.message || error?.error || '加载源分类子树失败');
+          message.error(getErrorMessage(error, '加载源分类子树失败'));
           setSourceNodesData(buildContextTree(fullTreeData, checkedKeySet, new Map()));
         }
       } finally {
@@ -273,15 +283,24 @@ export default function BatchTransferModal({
       styles={{ 
         body: {
           padding: 0,
-          height: 'min(80vh, calc(100vh - 160px))',
-          minHeight: 0,
+          height: TRANSFER_MODAL_BODY_HEIGHT,
+          minHeight: TRANSFER_MODAL_BODY_HEIGHT,
           overflow: 'hidden',
           display: 'flex',
           flexDirection: 'column',
         },
       }}
     >
-      <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          flex: 1,
+          height: '100%',
+          minHeight: 0,
+          overflow: 'hidden',
+        }}
+      >
         <TransferWorkspace 
           businessDomain={businessDomain}
           initialAction={actionType || undefined}

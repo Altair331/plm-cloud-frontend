@@ -12,7 +12,6 @@ import {
   SUB_RULE_TABS,
   VARIABLE_KEY_OPTIONS,
   generateChildPreview,
-  generateSegmentPreview,
   generateSubRulePreview,
   getSegmentTypeLabel,
   isCategoryObject,
@@ -297,30 +296,7 @@ const CodeRulePreviewPanel: React.FC<CodeRulePreviewPanelProps> = ({ rule, activ
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const usesSubRules = Boolean(rule.ruleSetMeta) || isCategoryObject(rule.businessObject);
-  const previewRequestKey = useMemo(() => {
-    const businessDomain = String(rule.businessDomain || rule.ruleSetMeta?.businessDomain || rule.code || '').trim().toUpperCase();
-
-    return JSON.stringify({
-      businessDomain,
-      activeTab,
-      isNew: Boolean(rule.isNew),
-      hasUnsavedChanges,
-      categoryRuleCode: rule.ruleMetadata?.category?.ruleCode || '',
-      attributeRuleCode: rule.ruleMetadata?.attribute?.ruleCode || '',
-      enumRuleCode: rule.ruleMetadata?.enum?.ruleCode || '',
-    });
-  }, [
-    activeTab,
-    hasUnsavedChanges,
-    rule.businessDomain,
-    rule.code,
-    rule.isNew,
-    rule.ruleMetadata?.attribute?.ruleCode,
-    rule.ruleMetadata?.category?.ruleCode,
-    rule.ruleMetadata?.enum?.ruleCode,
-    rule.ruleSetMeta?.businessDomain,
-  ]);
-  const previewRule = useMemo(() => rule, [previewRequestKey]);
+  const previewRule = rule;
 
   useEffect(() => {
     if (!previewRule.ruleMetadata || previewRule.isNew) {
@@ -368,7 +344,7 @@ const CodeRulePreviewPanel: React.FC<CodeRulePreviewPanelProps> = ({ rule, activ
     return () => {
       cancelled = true;
     };
-  }, [activeTab, hasUnsavedChanges, previewRequestKey, previewRule]);
+  }, [activeTab, hasUnsavedChanges, previewRule]);
 
   const treeData = useMemo<TreeDataNode[]>(() => {
     const backendPreviewNode = buildBackendPreviewNode({

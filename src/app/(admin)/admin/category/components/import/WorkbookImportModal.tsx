@@ -77,6 +77,11 @@ interface RuntimeJobTracker {
   seenLogKeys: Set<string>;
 }
 
+interface ErrorWithMessage {
+  message?: string;
+  error?: string;
+}
+
 const STEP_ICONS = [
   <FileExcelOutlined key="upload" />,
   <SettingOutlined key="config" />,
@@ -117,8 +122,12 @@ const isTerminalStatus = (status: string | null | undefined): boolean => {
   return status === 'COMPLETED' || status === 'FAILED';
 };
 
-const getErrorMessage = (error: any, fallback: string): string => {
-  return error?.message || error?.error || fallback;
+const getErrorMessage = (error: unknown, fallback: string): string => {
+  if (error && typeof error === 'object') {
+    const candidate = error as ErrorWithMessage;
+    return candidate.message || candidate.error || fallback;
+  }
+  return fallback;
 };
 
 const getLastLogMessage = (logs: WorkbookImportLogEventDto[]): string | null => {
@@ -144,7 +153,6 @@ const WorkbookImportModal: React.FC<WorkbookImportModalProps> = ({
   const [formState, setFormState] = useState(DEFAULT_WORKBOOK_IMPORT_FORM);
   const [dryRunning, setDryRunning] = useState(false);
   const [dryRunResult, setDryRunResult] = useState<WorkbookImportDryRunResponseDto | null>(null);
-  const [previewLoading, setPreviewLoading] = useState(false);
   const [dryRunRuntime, setDryRunRuntime] = useState<RuntimeJobState>(() => createEmptyRuntimeState());
   const [importRuntime, setImportRuntime] = useState<RuntimeJobState>(() => createEmptyRuntimeState());
   const [importing, setImporting] = useState(false);
@@ -178,8 +186,15 @@ const WorkbookImportModal: React.FC<WorkbookImportModalProps> = ({
     return mapDryRunPreviewRowsPage(dryRunResult, previewEntityType, previewPage, PREVIEW_PAGE_SIZE);
   }, [dryRunResult, previewEntityType, previewPage]);
 
-  runtimeStateRef.current.dryRun = dryRunRuntime;
-  runtimeStateRef.current.import = importRuntime;
+  const dryRunStatusValue = dryRunRuntime.status?.status;
+  const importStatusValue = importRuntime.status?.status;
+
+  useEffect(() => {
+    runtimeStateRef.current = {
+      dryRun: dryRunRuntime,
+      import: importRuntime,
+    };
+  }, [dryRunRuntime, importRuntime]);
 
   const previewTotal = useMemo(() => {
     return getPreviewRowCount(dryRunResult, previewEntityType);
@@ -266,7 +281,6 @@ const WorkbookImportModal: React.FC<WorkbookImportModalProps> = ({
     setUploadedFile(null);
     setFormState(DEFAULT_WORKBOOK_IMPORT_FORM);
     setDryRunResult(null);
-    setPreviewLoading(false);
     setPreviewEntityType('CATEGORY');
     setPreviewPage(1);
     setPreviewEntityIssueStats(createEmptyPreviewEntityIssueStats());
@@ -528,7 +542,6 @@ const WorkbookImportModal: React.FC<WorkbookImportModalProps> = ({
     dryRunFailureNoticeRef.current = null;
     dryRunIssueStatsLoadedJobIdRef.current = null;
     setDryRunResult(null);
-    setPreviewLoading(false);
     setPreviewPage(1);
     setPreviewEntityIssueStats(createEmptyPreviewEntityIssueStats());
     markStep(2, 'wait');
@@ -611,7 +624,6 @@ const WorkbookImportModal: React.FC<WorkbookImportModalProps> = ({
     previewResultCacheRef.current = {};
     setDryRunning(true);
     setDryRunResult(null);
-    setPreviewLoading(false);
     setPreviewEntityIssueStats(createEmptyPreviewEntityIssueStats());
     clearAllRuntimeState();
     markStep(2, 'process');
@@ -624,7 +636,7 @@ const WorkbookImportModal: React.FC<WorkbookImportModalProps> = ({
         jobId: response.jobId,
       });
       message.success('预检任务已创建');
-    } catch (error: any) {
+    } catch (error) {
       setDryRunning(false);
       markStep(2, 'error');
       message.error(getErrorMessage(error, '启动预检任务失败'));
@@ -657,7 +669,7 @@ const WorkbookImportModal: React.FC<WorkbookImportModalProps> = ({
         jobId: response.jobId,
       });
       message.success('导入任务已启动');
-    } catch (error: any) {
+    } catch (error) {
       setImporting(false);
       setCurrentStep(2);
       markStep(2, 'process');
@@ -667,24 +679,42 @@ const WorkbookImportModal: React.FC<WorkbookImportModalProps> = ({
   }, [clearRuntimeState, dryRunResult, dryRunRuntime.jobId, formState.atomic, formState.operator, markStep, message]);
 
   useEffect(() => {
-    if (!open || !dryRunRuntime.jobId || isTerminalStatus(dryRunRuntime.status?.status)) {
+    const dryRunJobId = dryRunRuntime.jobId;
+    if (!open || !dryRunJobId || isTerminalStatus(dryRunStatusValue)) {
       return undefined;
     }
 
-    return startRuntimeTracking('dryRun', dryRunRuntime.jobId);
-  }, [dryRunRuntime.jobId, open, startRuntimeTracking]);
+    let cleanup: (() => void) | undefined;
+    const timerId = window.setTimeout(() => {
+      cleanup = startRuntimeTracking('dryRun', dryRunJobId);
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timerId);
+      cleanup?.();
+    };
+  }, [dryRunRuntime.jobId, dryRunStatusValue, open, startRuntimeTracking]);
 
   useEffect(() => {
-    if (!open || !importRuntime.jobId || isTerminalStatus(importRuntime.status?.status)) {
+    const importJobId = importRuntime.jobId;
+    if (!open || !importJobId || isTerminalStatus(importStatusValue)) {
       return undefined;
     }
 
-    return startRuntimeTracking('import', importRuntime.jobId);
-  }, [importRuntime.jobId, open, startRuntimeTracking]);
+    let cleanup: (() => void) | undefined;
+    const timerId = window.setTimeout(() => {
+      cleanup = startRuntimeTracking('import', importJobId);
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timerId);
+      cleanup?.();
+    };
+  }, [importRuntime.jobId, importStatusValue, open, startRuntimeTracking]);
 
   useEffect(() => {
     const activeJobId = dryRunRuntime.jobId;
-    if (!activeJobId || dryRunRuntime.status?.status !== 'COMPLETED') {
+    if (!activeJobId || dryRunStatusValue !== 'COMPLETED') {
       return undefined;
     }
 
@@ -702,7 +732,6 @@ const WorkbookImportModal: React.FC<WorkbookImportModalProps> = ({
         return;
       }
 
-      setPreviewLoading(true);
       try {
         const result = await workbookImportApi.getDryRunResultPage(activeJobId, {
           entityType: previewEntityType,
@@ -721,16 +750,12 @@ const WorkbookImportModal: React.FC<WorkbookImportModalProps> = ({
           dryRunLoadedJobIdRef.current = activeJobId;
           message.success('预检完成');
         }
-      } catch (error: any) {
+      } catch (error) {
         if (cancelled || dryRunResultRequestRef.current !== requestKey) {
           return;
         }
         markStep(2, 'error');
         message.error(getErrorMessage(error, '加载预检结果失败'));
-      } finally {
-        if (!cancelled && dryRunResultRequestRef.current === requestKey) {
-          setPreviewLoading(false);
-        }
       }
     };
 
@@ -739,21 +764,21 @@ const WorkbookImportModal: React.FC<WorkbookImportModalProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [dryRunRuntime.jobId, dryRunRuntime.status?.status, markStep, message, previewEntityType, previewPage]);
+  }, [dryRunRuntime.jobId, dryRunStatusValue, markStep, message, previewEntityType, previewPage]);
 
   useEffect(() => {
     const activeJobId = dryRunRuntime.jobId;
-    if (!activeJobId || dryRunRuntime.status?.status !== 'FAILED' || dryRunFailureNoticeRef.current === activeJobId) {
+    if (!activeJobId || dryRunStatusValue !== 'FAILED' || dryRunFailureNoticeRef.current === activeJobId) {
       return;
     }
 
     dryRunFailureNoticeRef.current = activeJobId;
     message.error(getLastLogMessage(dryRunRuntime.logs) || '预检失败');
-  }, [dryRunRuntime.jobId, dryRunRuntime.logs, dryRunRuntime.status?.status, message]);
+  }, [dryRunRuntime.jobId, dryRunRuntime.logs, dryRunStatusValue, message]);
 
   useEffect(() => {
     const activeJobId = dryRunRuntime.jobId;
-    if (!activeJobId || dryRunRuntime.status?.status !== 'COMPLETED' || dryRunIssueStatsLoadedJobIdRef.current === activeJobId) {
+    if (!activeJobId || dryRunStatusValue !== 'COMPLETED' || dryRunIssueStatsLoadedJobIdRef.current === activeJobId) {
       return;
     }
 
@@ -779,19 +804,21 @@ const WorkbookImportModal: React.FC<WorkbookImportModalProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [dryRunRuntime.jobId, dryRunRuntime.status?.status]);
+  }, [dryRunRuntime.jobId, dryRunStatusValue]);
 
   useEffect(() => {
     if (!open || currentStep !== 2 || !uploadedFile || dryRunning || dryRunResult || dryRunRuntime.jobId || dryRunRuntime.status) {
       return;
     }
 
-    void runDryRun();
-  }, [currentStep, dryRunResult, dryRunRuntime.jobId, dryRunRuntime.status, dryRunning, open, runDryRun, uploadedFile]);
+    const timerId = window.setTimeout(() => {
+      void runDryRun();
+    }, 0);
 
-  useEffect(() => {
-    setPreviewPage(1);
-  }, [previewEntityType]);
+    return () => {
+      window.clearTimeout(timerId);
+    };
+  }, [currentStep, dryRunResult, dryRunRuntime.jobId, dryRunRuntime.status, dryRunning, open, runDryRun, uploadedFile]);
 
   useEffect(() => {
     if (!open || currentStep !== 2 || !dryRunResult) {
@@ -800,7 +827,6 @@ const WorkbookImportModal: React.FC<WorkbookImportModalProps> = ({
 
     const computePreviewTableHeight = () => {
       const layout = dryRunResultLayoutRef.current;
-      const summary = dryRunSummaryRef.current;
       const panel = previewPanelRef.current;
       const toolbar = previewToolbarRef.current;
       if (!layout || !panel || !toolbar) {
@@ -874,7 +900,13 @@ const WorkbookImportModal: React.FC<WorkbookImportModalProps> = ({
 
   useEffect(() => {
     if (!open) {
-      resetAll();
+      const timerId = window.setTimeout(() => {
+        resetAll();
+      }, 0);
+
+      return () => {
+        window.clearTimeout(timerId);
+      };
     }
   }, [open, resetAll]);
 
@@ -913,8 +945,8 @@ const WorkbookImportModal: React.FC<WorkbookImportModalProps> = ({
     };
   }, [importRuntime.status?.progress]);
 
-  const executionFinished = isTerminalStatus(importRuntime.status?.status);
-  const importSucceeded = importRuntime.status?.status === 'COMPLETED';
+  const executionFinished = isTerminalStatus(importStatusValue);
+  const importSucceeded = importStatusValue === 'COMPLETED';
 
   const toggleTaskDrawer = useCallback((kind: RuntimeJobKind) => {
     if (taskDrawerOpen && taskDrawerKind === kind) {
@@ -956,12 +988,6 @@ const WorkbookImportModal: React.FC<WorkbookImportModalProps> = ({
     const dryRunStatus = dryRunRuntime.status;
     const dryRunFinished = isTerminalStatus(dryRunStatus?.status);
     const dryRunSucceeded = dryRunStatus?.status === 'COMPLETED';
-    const summaryPanelStyle = {
-      padding: '14px 16px',
-      borderRadius: token.borderRadiusLG,
-      border: `1px solid ${token.colorBorderSecondary}`,
-      background: token.colorBgContainer,
-    } as const;
 
     return (
       <Flex vertical gap={16} style={{ height: '100%', minHeight: 0 }}>
@@ -1025,7 +1051,10 @@ const WorkbookImportModal: React.FC<WorkbookImportModalProps> = ({
             previewPage={previewPage}
             previewTotal={previewTotal}
             previewEntityIssueStats={previewEntityIssueStats}
-            onPreviewEntityTypeChange={setPreviewEntityType}
+            onPreviewEntityTypeChange={(nextEntityType) => {
+              setPreviewEntityType(nextEntityType);
+              setPreviewPage(1);
+            }}
             onPreviewPageChange={setPreviewPage}
             onRunDryRun={runDryRun}
             onToggleTaskDrawer={toggleTaskDrawer}

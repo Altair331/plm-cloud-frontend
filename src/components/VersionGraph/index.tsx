@@ -4,6 +4,7 @@ import {
   MarkerType,
   Edge,
   Node,
+  Position,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import Delta from "quill-delta";
@@ -31,6 +32,21 @@ interface DiffSegment {
   type: "equal" | "remove" | "add" | "format";
 }
 
+interface DeltaOperation {
+  insert?: unknown;
+  retain?: number;
+  delete?: number;
+  attributes?: Record<string, unknown>;
+}
+
+const getErrorMessage = (error: unknown, fallback: string) => {
+  if (error && typeof error === "object") {
+    const candidate = error as { message?: string; error?: string };
+    return candidate.message || candidate.error || fallback;
+  }
+  return fallback;
+};
+
 const ensureTrailingNewLine = (text: string) =>
   text.endsWith("\n") ? text : `${text}\n`;
 
@@ -53,7 +69,10 @@ const parseDeltaFromMaybeJson = (value?: string): Delta => {
 
 const toPlainText = (delta: Delta) => {
   const text = (delta.ops || [])
-    .map((op: any) => (typeof op?.insert === "string" ? op.insert : ""))
+    .map((op) => {
+      const operation = op as DeltaOperation;
+      return typeof operation.insert === "string" ? operation.insert : "";
+    })
     .join("");
   return text.replace(/\n$/, "");
 };
@@ -100,8 +119,10 @@ const buildDeltaDiffSegments = (baseDescription?: string, targetDescription?: st
     }
   }
 
-  const hasMeaningfulDiff = (diffDelta.ops || []).some((op: any) =>
-    typeof op.insert === "string" || typeof op.delete === "number" || !!op.attributes,
+  const hasMeaningfulDiff = (diffDelta.ops || []).some((op) => {
+    const operation = op as DeltaOperation;
+    return typeof operation.insert === "string" || typeof operation.delete === "number" || !!operation.attributes;
+  },
   );
 
   return {
@@ -275,8 +296,8 @@ const VersionGraph: React.FC<VersionGraphProps> = ({ categoryId, versions = [] }
         background: "#fff",
         boxShadow: v.latest ? "0 0 8px rgba(22,119,255,0.2)" : "none",
       },
-      sourcePosition: "right" as any,
-      targetPosition: "left" as any,
+      sourcePosition: Position.Right,
+      targetPosition: Position.Left,
     }));
 
     const resultingEdges: Edge[] = [];
@@ -330,9 +351,8 @@ const VersionGraph: React.FC<VersionGraphProps> = ({ categoryId, versions = [] }
           clickedVer.versionId,
         );
         setCompareData(compare);
-      } catch (error: any) {
-        const message = error?.message || error?.error || "加载版本差异失败";
-        setCompareError(message);
+      } catch (error) {
+        setCompareError(getErrorMessage(error, "加载版本差异失败"));
       } finally {
         setCompareLoading(false);
       }

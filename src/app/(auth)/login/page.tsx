@@ -6,7 +6,6 @@ import { ArrowRightOutlined, GoogleOutlined, GithubOutlined, QuestionCircleOutli
 import Illustration from "@/assets/illustration-final.svg";
 import Image from "next/image";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { authApi, isAuthErrorResponse } from '@/services/auth';
 import { mapWorkspaceSessionDtoToState, persistPlatformAuthState, persistWorkspaceSessionState } from '@/utils/authStorage';
 import { encryptPasswordWithPublicKey } from '@/utils/passwordEncryption';
@@ -31,7 +30,6 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState<1 | 2>(1);
   const [plmIdCache, setPlmIdCache] = useState('');
-  const router = useRouter();
 
   useEffect(() => {
     const initialIdentifier = new URLSearchParams(window.location.search)

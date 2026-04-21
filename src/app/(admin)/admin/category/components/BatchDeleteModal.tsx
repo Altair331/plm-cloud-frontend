@@ -56,6 +56,14 @@ export interface BatchDeleteModalProps {
 const CATEGORY_HAS_CHILDREN = 'CATEGORY_HAS_CHILDREN';
 const CATEGORY_NOT_FOUND = 'CATEGORY_NOT_FOUND';
 
+const getErrorMessage = (error: unknown, fallback: string) => {
+  if (error && typeof error === 'object') {
+    const candidate = error as { message?: string; error?: string };
+    return candidate.message || candidate.error || fallback;
+  }
+  return fallback;
+};
+
 // ─── Detail list item ───────────────────────────────────────────
 
 interface DetailItem {
@@ -160,7 +168,7 @@ const BatchDeleteModal: React.FC<BatchDeleteModalProps> = ({
 
   // ─── Derived impact data ──────────────────────────────────────
 
-  const { detailItems, hasCascadeRequired, cascadeRequiredCount } = useMemo(() => {
+  const { detailItems, cascadeRequiredCount } = useMemo(() => {
     const items: DetailItem[] = [];
     let cascadeCount = 0;
 
@@ -196,7 +204,6 @@ const BatchDeleteModal: React.FC<BatchDeleteModalProps> = ({
 
     return {
       detailItems: items,
-      hasCascadeRequired: cascadeCount > 0,
       cascadeRequiredCount: cascadeCount,
     };
   }, [localNodes, dryRunResponse, nodeMap]);
@@ -293,8 +300,8 @@ const BatchDeleteModal: React.FC<BatchDeleteModalProps> = ({
         setExecuteResponse(response);
       }
       setPhase('result');
-    } catch (err: any) {
-      setError(err?.message || '删除执行失败');
+    } catch (error) {
+      setError(getErrorMessage(error, '删除执行失败'));
       setPhase('result');
     }
   };

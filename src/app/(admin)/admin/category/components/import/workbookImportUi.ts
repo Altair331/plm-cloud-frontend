@@ -252,23 +252,36 @@ export const getPreviewRowCount = (
 export const mapDryRunPreviewRowsPage = (
   dryRunResult: WorkbookImportDryRunResponseDto | null,
   entityType: WorkbookImportPreviewEntityFilter,
-  _page: number,
-  _pageSize: number,
+  page: number,
+  pageSize: number,
 ): WorkbookImportPreviewRow[] => {
   if (!dryRunResult) {
     return [];
   }
 
-  switch (entityType) {
-    case 'CATEGORY':
-      return dryRunResult.preview.categories.map(mapCategoryPreviewRow);
-    case 'ATTRIBUTE':
-      return dryRunResult.preview.attributes.map(mapAttributePreviewRow);
-    case 'ENUM_OPTION':
-      return dryRunResult.preview.enumOptions.map(mapEnumPreviewRow);
-    default:
-      return [];
+  const allRows = (() => {
+    switch (entityType) {
+      case 'CATEGORY':
+        return dryRunResult.preview.categories.map(mapCategoryPreviewRow);
+      case 'ATTRIBUTE':
+        return dryRunResult.preview.attributes.map(mapAttributePreviewRow);
+      case 'ENUM_OPTION':
+        return dryRunResult.preview.enumOptions.map(mapEnumPreviewRow);
+      default:
+        return [];
+    }
+  })();
+
+  // 分页结果接口已经只返回当前实体当前页的数据，这里不能再次按页切片。
+  if (dryRunResult.previewEntityType === entityType && dryRunResult.previewPage) {
+    return allRows;
   }
+
+  const safePage = Math.max(0, page - 1);
+  const safePageSize = Math.max(1, pageSize);
+  const start = safePage * safePageSize;
+
+  return allRows.slice(start, start + safePageSize);
 };
 
 export const mapDryRunPreviewRows = (

@@ -1,9 +1,8 @@
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   App,
   Space,
   Typography,
-  Tag,
   Splitter,
   Layout,
   theme,
@@ -19,12 +18,15 @@ import {
   MetaAttributeUpsertRequestDto,
   MetaAttributeDefListItemDto,
   MetaAttributeDefDetailDto,
+  MetaAttributeLovValueDto,
 } from "@/models/metaAttribute";
 import dayjs from "dayjs";
 
 const isNewAttributeId = (id?: string | null) => !!id && id.startsWith("new_attr_");
 const isEnumLikeType = (type?: string | null) => type === "enum" || type === "multi-enum";
-const mapAttributeTypeToBackend = (type?: string | null) => (type === "boolean" ? "bool" : type) as any;
+const mapAttributeTypeToBackend = (
+  type: AttributeItem["type"],
+): MetaAttributeUpsertRequestDto["dataType"] => (type === "boolean" ? "bool" : type) as MetaAttributeUpsertRequestDto["dataType"];
 const normalizeAttributeTypeFromBackend = (type?: string | null) => {
   if (type === 'bool') {
     return 'boolean';
@@ -84,6 +86,25 @@ const isManualCodeOverride = (value?: string | null, suggestedValue?: string | n
   }
   const normalizedSuggestedValue = normalizeCode(suggestedValue);
   return !normalizedSuggestedValue || normalizedValue !== normalizedSuggestedValue;
+};
+
+interface CurrentNodeContext {
+  title?: string;
+  code?: string;
+  businessDomain?: string;
+}
+
+interface ErrorWithMessage {
+  message?: string;
+  error?: string;
+}
+
+const getErrorMessage = (error: unknown, fallback: string) => {
+  if (error && typeof error === "object") {
+    const candidate = error as ErrorWithMessage;
+    return candidate.message || candidate.error || fallback;
+  }
+  return fallback;
 };
 
 const normalizeAttributeForCompare = (attribute: AttributeItem | null) => {
@@ -152,8 +173,62 @@ const createEmptyAttributeDraft = (id: string): AttributeItem => ({
   isLatest: true,
 });
 
+const mapListItemToAttributeItem = (dto: MetaAttributeDefListItemDto): AttributeItem => {
+  const normalizedType = normalizeAttributeTypeFromBackend(dto.dataType) as AttributeItem["type"];
+
+  return {
+    id: dto.key,
+    code: dto.key,
+    suggestedCode: dto.key,
+    name: dto.displayName,
+    attributeField: dto.attributeField || undefined,
+    type: normalizedType,
+    unit: dto.unit || undefined,
+    version: dto.latestVersionNo,
+    isLatest: true,
+    required: dto.required,
+    unique: dto.unique,
+    hidden: dto.hidden,
+    readonly: dto.readOnly,
+    searchable: dto.searchable,
+  };
+};
+
+const mapDetailToAttributeItem = (dto: MetaAttributeDefDetailDto): AttributeItem => {
+  const normalizedType = normalizeAttributeTypeFromBackend(dto.latestVersion.dataType) as AttributeItem["type"];
+
+  return {
+    id: dto.key,
+    code: dto.key,
+    suggestedCode: dto.key,
+    name: dto.latestVersion.displayName,
+    attributeField: dto.latestVersion.attributeField || undefined,
+    type: normalizedType,
+    unit: dto.latestVersion.unit || undefined,
+    defaultValue: normalizeDefaultValueFromBackend(normalizedType, dto.latestVersion.defaultValue),
+    required: dto.latestVersion.required,
+    unique: dto.latestVersion.unique,
+    hidden: dto.latestVersion.hidden,
+    readonly: dto.latestVersion.readOnly,
+    searchable: dto.latestVersion.searchable,
+    version: dto.latestVersion.versionNo,
+    isLatest: true,
+    createdBy: dto.createdBy,
+    createdAt: dto.createdAt ? dayjs(dto.createdAt).format("YYYY-MM-DD HH:mm:ss") : undefined,
+    modifiedBy: dto.modifiedBy,
+    modifiedAt: dto.modifiedAt ? dayjs(dto.modifiedAt).format("YYYY-MM-DD HH:mm:ss") : undefined,
+    description: dto.latestVersion.description || undefined,
+    min: dto.latestVersion.minValue,
+    max: dto.latestVersion.maxValue,
+    step: dto.latestVersion.step,
+    precision: dto.latestVersion.precision,
+    trueLabel: dto.latestVersion.trueLabel,
+    falseLabel: dto.latestVersion.falseLabel,
+  };
+};
+
 interface Props {
-  currentNode?: { title?: string; code?: string; [key: string]: any };
+  currentNode?: CurrentNodeContext;
   onUnsavedStateChange?: (state: {
     hasUnsavedChanges: boolean;
     unsavedNewCount: number;
@@ -166,14 +241,14 @@ const AttributeDesigner: React.FC<Props> = ({
 }) => {
   const { token } = theme.useToken();
   const { message: messageApi, modal } = App.useApp();
+  const currentCategoryCode = String(currentNode?.code || "").trim();
+  const currentBusinessDomain = String(currentNode?.businessDomain || "").trim();
   const [selectedAttributeId, setSelectedAttributeId] = useState<string | null>(
     null,
   );
   const [selectedAttributeIds, setSelectedAttributeIds] = useState<string[]>([]);
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [searchText, setSearchText] = useState("");
   const [dataSource, setDataSource] = useState<AttributeItem[]>([]);
-  const [loading, setLoading] = useState(false);
 
   const [currentAttribute, setCurrentAttribute] =
     useState<AttributeItem | null>(null);
@@ -187,75 +262,13 @@ const AttributeDesigner: React.FC<Props> = ({
   const [previewWarnings, setPreviewWarnings] = useState<string[]>([]);
   const [allowManualCodeOverride, setAllowManualCodeOverride] = useState(false);
   const [allowManualEnumCodeOverride, setAllowManualEnumCodeOverride] = useState(false);
-  const [attributeExportVisible, setAttributeExportVisible] = useState(false);
-  const currentBusinessDomain = String(currentNode?.businessDomain || "").trim();
 
-  // Helper: Map Backend DTO List Item to Frontend AttributeItem
-  const mapListItemToAttributeItem = (dto: MetaAttributeDefListItemDto): AttributeItem => {
-    const normalizedType = normalizeAttributeTypeFromBackend(dto.dataType) as AttributeItem["type"];
-
-    return {
-    id: dto.key,
-    code: dto.key,
-    suggestedCode: dto.key,
-    name: dto.displayName,
-    attributeField: dto.attributeField || undefined,
-    type: normalizedType,
-    unit: dto.unit || undefined,
-    version: dto.latestVersionNo,
-    isLatest: true,
-    // Map the new extended fields from list API
-    required: dto.required,
-    unique: dto.unique,
-    hidden: dto.hidden,
-    readonly: dto.readOnly,
-    searchable: dto.searchable,
-    };
-  };
-
-   // Helper: Map Backend Detail DTO to Frontend AttributeItem
-   const mapDetailToAttributeItem = (dto: MetaAttributeDefDetailDto): AttributeItem => {
-    const normalizedType = normalizeAttributeTypeFromBackend(dto.latestVersion.dataType) as AttributeItem["type"];
-
-    return {
-    id: dto.key,
-    code: dto.key,
-    suggestedCode: dto.key,
-    name: dto.latestVersion.displayName,
-      attributeField: dto.latestVersion.attributeField || undefined,
-    type: normalizedType,
-    unit: dto.latestVersion.unit || undefined,
-    defaultValue: normalizeDefaultValueFromBackend(normalizedType, dto.latestVersion.defaultValue),
-    required: dto.latestVersion.required,
-    unique: dto.latestVersion.unique,
-    hidden: dto.latestVersion.hidden,
-    readonly: dto.latestVersion.readOnly,
-    searchable: dto.latestVersion.searchable,
-    version: dto.latestVersion.versionNo,
-    isLatest: true, 
-    createdBy: dto.createdBy,
-    createdAt: dto.createdAt ? dayjs(dto.createdAt).format("YYYY-MM-DD HH:mm:ss") : undefined,
-    modifiedBy: dto.modifiedBy,
-    modifiedAt: dto.modifiedAt ? dayjs(dto.modifiedAt).format("YYYY-MM-DD HH:mm:ss") : undefined,
-    description: dto.latestVersion.description || undefined,
-    
-    // Map extended value configurations
-    min: dto.latestVersion.minValue,
-    max: dto.latestVersion.maxValue,
-    step: dto.latestVersion.step,
-    precision: dto.latestVersion.precision,
-    trueLabel: dto.latestVersion.trueLabel,
-    falseLabel: dto.latestVersion.falseLabel,
-    };
-  };
-
-  const loadAttributes = async (
+  const loadAttributes = useCallback(async (
     categoryCode: string,
     businessDomain?: string,
     selectAttributeId?: string,
     localUnsavedItems: AttributeItem[] = [],
   ) => {
-    setLoading(true);
     try {
       const res = await metaAttributeApi.listAttributes({ 
         businessDomain,
@@ -273,21 +286,18 @@ const AttributeDesigner: React.FC<Props> = ({
     } catch (e) {
       console.error(e);
       messageApi.error("加载属性列表失败");
-    } finally {
-      setLoading(false);
     }
-  };
+  }, [messageApi]);
 
   useEffect(() => {
-    if (currentNode?.code) {
-      loadAttributes(currentNode.code, currentBusinessDomain, undefined, []);
+    if (currentCategoryCode) {
+      void loadAttributes(currentCategoryCode, currentBusinessDomain, undefined, []);
       setSelectedAttributeId(null);
       setSelectedAttributeIds([]);
       setCurrentAttribute(null);
       setBaselineAttribute(null);
       setEnumOptions([]);
       setBaselineEnumOptions([]);
-      setHasUnsavedChanges(false);
     } else {
       setDataSource([]);
       setSelectedAttributeId(null);
@@ -296,9 +306,8 @@ const AttributeDesigner: React.FC<Props> = ({
       setBaselineAttribute(null);
       setEnumOptions([]);
       setBaselineEnumOptions([]);
-      setHasUnsavedChanges(false);
     }
-  }, [currentBusinessDomain, currentNode]);
+  }, [currentBusinessDomain, currentCategoryCode, loadAttributes]);
 
   // Sync currentAttribute from dataSource when selection changes
   useEffect(() => {
@@ -334,12 +343,12 @@ const AttributeDesigner: React.FC<Props> = ({
            
            // Load enum options if present
            if (detail.lovValues && detail.lovValues.length > 0) {
-             const mappedOptions = detail.lovValues.map((v: any, index: number) => ({
+             const mappedOptions = detail.lovValues.map((valueOption: MetaAttributeLovValueDto, index: number) => ({
                id: `enum_${index}`,
-               code: v.code,
-               suggestedCode: v.code,
-               value: v.value, // Backend detail DTO uses `value`
-               label: v.label || '',
+               code: valueOption.code || "",
+               suggestedCode: valueOption.code || "",
+               value: valueOption.value || "",
+               label: valueOption.label || '',
                order: index
              }));
              setEnumOptions(mappedOptions);
@@ -359,8 +368,8 @@ const AttributeDesigner: React.FC<Props> = ({
         setBaselineEnumOptions([]);
       }
     };
-    fetchDetail();
-  }, [currentBusinessDomain, selectedAttributeId, selectedAttributeIds.length, dataSource]);
+    void fetchDetail();
+  }, [currentBusinessDomain, dataSource, messageApi, selectedAttributeId, selectedAttributeIds.length]);
 
   // Sync selection state when dataSource changes (e.g. deletion)
   useEffect(() => {
@@ -385,10 +394,6 @@ const AttributeDesigner: React.FC<Props> = ({
 
   const effectiveHasUnsavedChanges = computedDirty;
 
-  useEffect(() => {
-    setHasUnsavedChanges(computedDirty);
-  }, [computedDirty]);
-
   const enumPreviewSignature = useMemo(() => {
     if (!currentAttribute || !isEnumLikeType(currentAttribute.type)) {
       return "";
@@ -402,7 +407,7 @@ const AttributeDesigner: React.FC<Props> = ({
         suggestedCode: item.suggestedCode || "",
       })),
     );
-  }, [currentAttribute?.id, currentAttribute?.type, enumOptions]);
+  }, [currentAttribute, enumOptions]);
 
   useEffect(() => {
     if (previewTimerRef.current) {
@@ -410,7 +415,7 @@ const AttributeDesigner: React.FC<Props> = ({
       previewTimerRef.current = null;
     }
 
-    const categoryCode = currentNode?.code;
+    const categoryCode = currentCategoryCode;
     const isNewAttribute = isNewAttributeId(currentAttribute?.id);
     const enumLike = currentAttribute ? isEnumLikeType(currentAttribute.type) : false;
     const persistedAttributeCode = currentAttribute ? normalizeCode(currentAttribute.code) : "";
@@ -537,12 +542,12 @@ const AttributeDesigner: React.FC<Props> = ({
             return { ...item, code: suggestedCode, suggestedCode };
           }),
         );
-      } catch (e: any) {
+      } catch (error) {
         if (requestId !== previewRequestIdRef.current) {
           return;
         }
 
-        setPreviewWarnings([e?.message || e?.error || "属性编码预计算失败"]);
+        setPreviewWarnings([getErrorMessage(error, "属性编码预计算失败")]);
 
         if (isNewAttribute && !attributeManualOverride) {
           setCurrentAttribute((prev) => {
@@ -574,7 +579,7 @@ const AttributeDesigner: React.FC<Props> = ({
         previewTimerRef.current = null;
       }
     };
-  }, [currentAttribute?.id, currentAttribute?.type, currentAttribute?.code, currentAttribute?.suggestedCode, currentBusinessDomain, enumPreviewSignature, currentNode?.code]);
+  }, [currentAttribute, currentBusinessDomain, currentCategoryCode, enumOptions, enumPreviewSignature]);
 
   useEffect(() => {
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
@@ -589,11 +594,11 @@ const AttributeDesigner: React.FC<Props> = ({
     };
   }, [effectiveHasUnsavedChanges]);
 
-  const handleAttributeUpdate = (key: string, value: any) => {
+  const handleAttributeUpdate = useCallback((key: string, value: unknown) => {
     if (!currentAttribute) return;
-    const updated = { ...currentAttribute, [key]: value };
+    const updated = { ...currentAttribute, [key]: value } as AttributeItem;
     setCurrentAttribute(updated);
-  };
+  }, [currentAttribute]);
 
   const resetWorkspaceState = () => {
     setCurrentAttribute(null);
@@ -601,7 +606,6 @@ const AttributeDesigner: React.FC<Props> = ({
     setEnumOptions([]);
     setBaselineEnumOptions([]);
     setPreviewWarnings([]);
-    setHasUnsavedChanges(false);
   };
 
   const discardCurrentEditingState = () => {
@@ -618,7 +622,6 @@ const AttributeDesigner: React.FC<Props> = ({
       setEnumOptions([...baselineEnumOptions]);
     }
     setPreviewWarnings([]);
-    setHasUnsavedChanges(false);
   };
 
   const runWithUnsavedChangesGuard = (action: () => void) => {
@@ -682,7 +685,6 @@ const AttributeDesigner: React.FC<Props> = ({
       setEnumOptions([]);
       setBaselineEnumOptions([]);
       setPreviewWarnings([]);
-      setHasUnsavedChanges(false);
     });
   };
 
@@ -707,7 +709,6 @@ const AttributeDesigner: React.FC<Props> = ({
       setEnumOptions([]);
       setBaselineEnumOptions([]);
       setPreviewWarnings([]);
-      setHasUnsavedChanges(false);
     });
   };
 
@@ -715,7 +716,7 @@ const AttributeDesigner: React.FC<Props> = ({
     attribute: AttributeItem,
     options?: { saveAndNext?: boolean },
   ) => {
-      if (!currentNode?.code || !currentBusinessDomain) {
+      if (!currentCategoryCode || !currentBusinessDomain) {
         messageApi.error("缺少业务领域上下文，无法保存属性");
         return;
       }
@@ -765,10 +766,10 @@ const AttributeDesigner: React.FC<Props> = ({
       try {
             let savedDetail: MetaAttributeDefDetailDto;
           if (isNew) {
-          savedDetail = await metaAttributeApi.createAttribute(currentBusinessDomain, currentNode.code, dto);
+            savedDetail = await metaAttributeApi.createAttribute(currentBusinessDomain, currentCategoryCode, dto);
               messageApi.success("Created successfully");
           } else {
-          savedDetail = await metaAttributeApi.updateAttribute(attribute.code, currentBusinessDomain, currentNode.code, dto);
+            savedDetail = await metaAttributeApi.updateAttribute(attribute.code, currentBusinessDomain, currentCategoryCode, dto);
               messageApi.success("Updated successfully");
           }
 
@@ -778,7 +779,7 @@ const AttributeDesigner: React.FC<Props> = ({
 
           const targetId = nextUnsavedNewId || savedDetail.key;
           await loadAttributes(
-            currentNode.code,
+            currentCategoryCode,
             currentBusinessDomain,
             targetId,
             remainingUnsavedItems.filter((item) => isNewAttributeId(item.id)),
@@ -794,11 +795,10 @@ const AttributeDesigner: React.FC<Props> = ({
 
           setBaselineAttribute(null);
           setBaselineEnumOptions([]);
-          setHasUnsavedChanges(false);
-      } catch (e: any) {
-          console.error("Save error:", e);
+    } catch (error) {
+      console.error("Save error:", error);
           // Since request.ts interceptor now rejects with error.response.data directly
-          let errorMsg = e.message || e.error || "Operation failed";
+      let errorMsg = getErrorMessage(error, "Operation failed");
           
           // User-friendly error message translation
           if (errorMsg.includes("attribute code already exists in business domain") || errorMsg.includes("attribute already exists")) {
@@ -812,7 +812,7 @@ const AttributeDesigner: React.FC<Props> = ({
           }
           
             messageApi.error(errorMsg);
-          throw e; // Throw to let Workspace know it failed
+          throw error;
       }
   };
 
@@ -838,17 +838,17 @@ const AttributeDesigner: React.FC<Props> = ({
         }
 
         // If it's a real backend attribute
-        if (!currentNode?.code || !currentBusinessDomain) {
+        if (!currentCategoryCode || !currentBusinessDomain) {
           messageApi.error("缺少业务领域上下文，无法删除属性");
           return;
         }
 
         try {
-          await metaAttributeApi.deleteAttribute(attribute.code, currentBusinessDomain, currentNode.code);
+          await metaAttributeApi.deleteAttribute(attribute.code, currentBusinessDomain, currentCategoryCode);
           messageApi.success("删除成功 (Deleted)");
           // Refresh list
-          loadAttributes(
-            currentNode.code,
+          void loadAttributes(
+            currentCategoryCode,
             currentBusinessDomain,
             undefined,
             dataSource.filter((item) => isNewAttributeId(item.id)),
@@ -902,25 +902,6 @@ const AttributeDesigner: React.FC<Props> = ({
     });
   }, [effectiveHasUnsavedChanges, unsavedNewCount, onUnsavedStateChange]);
 
-  const handleSaveAll = () => {
-    // Optional: Bulk save implementation if backend supports it, otherwise warn user
-    messageApi.info("Please save each attribute individually in the workspace.");
-  };
-
-  // Modal Title
-  const modalTitle = (
-    <Space align="center">
-      <Typography.Title level={5} style={{ margin: 0 }}>
-        &gt; {currentNode?.title || "未知对象 (Unknown Item)"}
-      </Typography.Title>
-      {effectiveHasUnsavedChanges && (
-         <Tag color="warning" variant="filled" style={{ marginLeft: 8 }}>
-            未保存 (Unsaved Changes)
-         </Tag>
-      )}
-    </Space>
-  );
-
   // Toolbar Actions
   const renderToolbar = () => (
     <Flex
@@ -965,7 +946,7 @@ const AttributeDesigner: React.FC<Props> = ({
             onDuplicateAttribute={handleDuplicateAttribute}
             onDeleteAttribute={handleDeleteAttribute}
             onBatchRemoveAttributes={handleBatchRemoveAttributes}
-            onExportAttributes={() => setAttributeExportVisible(true)}
+            onExportAttributes={() => messageApi.info("导出功能暂未开放")}
           />
         </Splitter.Panel>
         <Splitter.Panel>
@@ -994,26 +975,16 @@ const AttributeDesigner: React.FC<Props> = ({
               setBaselineAttribute(null);
               setEnumOptions([]);
               setBaselineEnumOptions([]);
-              setHasUnsavedChanges(false);
             }}
             onCancelEdit={() => {
               if (baselineAttribute) {
                 setCurrentAttribute({ ...baselineAttribute });
                 setEnumOptions([...baselineEnumOptions]);
               }
-              setHasUnsavedChanges(false);
             }}
           />
         </Splitter.Panel>
       </Splitter>
-
-      {/* <AttributeExportModal
-        open={attributeExportVisible}
-        attributes={dataSource}
-        selectedAttributeIds={selectedAttributeIds}
-        categoryTitle={currentNode?.title}
-        onCancel={() => setAttributeExportVisible(false)}
-      /> */}
     </Layout>
   );
 };

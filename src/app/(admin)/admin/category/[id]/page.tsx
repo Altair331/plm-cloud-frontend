@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { App, Splitter, Input, Drawer, Descriptions, Typography, theme, Spin, Empty, Divider, Button, Form, Select, Space, Card, Row, Col, Tabs } from "antd";
+import React, { useCallback, useState, useEffect } from "react";
+import { App, Splitter, Input, Drawer, Descriptions, theme, Spin, Button, Form, Select, Space, Card, Row, Col, Tabs } from "antd";
 import type { DataNode, TreeProps } from "antd/es/tree";
 import dynamic from "next/dynamic";
 import CategoryTree from "../AdminCategoryTree";
@@ -23,11 +23,11 @@ import {
 import AttributeDesigner from "../AttributeDesigner";
 import { useDictionary } from "@/contexts/DictionaryContext";
 import type { MetaDictionaryEntryDto } from "@/models/dictionary";
+import type { MetaCategoryVersionHistoryDto } from "@/models/metaCategory";
 import {
   CATEGORY_BUSINESS_DOMAIN_DICT_CODE,
   getCategoryBusinessDomainConfigs,
   getCategoryBusinessDomainPath,
-  getDefaultCategoryBusinessDomain,
   resolveCategoryBusinessDomain,
 } from "@/features/category/businessDomains";
 
@@ -94,6 +94,31 @@ interface CategoryNodeRef extends MetaCategoryNodeDto {
   depth?: number;
 }
 
+interface QuillDeltaOp {
+  insert?: string;
+}
+
+interface QuillDelta {
+  ops?: QuillDeltaOp[];
+}
+
+interface ErrorWithMessage {
+  message?: string;
+  error?: string;
+}
+
+type MetaCategoryDetailWithHistory = MetaCategoryDetailDto & {
+  historyVersions?: MetaCategoryVersionHistoryDto[];
+};
+
+const getErrorMessage = (error: unknown, fallback: string) => {
+  if (error && typeof error === "object") {
+    const normalized = error as ErrorWithMessage;
+    return normalized.message || normalized.error || fallback;
+  }
+  return fallback;
+};
+
 type BatchTransferSuccessResponse =
   | MetaCategoryBatchTransferResponseDto
   | MetaCategoryBatchTransferTopologyResponseDto;
@@ -151,10 +176,10 @@ const getLevelByNumber = (level?: number): CategoryTreeNode["level"] => {
 const deltaJsonToPlainText = (input?: string | null) => {
   if (!input) return "";
   try {
-    const parsed = JSON.parse(input);
+    const parsed = JSON.parse(input) as QuillDelta;
     if (!parsed || !Array.isArray(parsed.ops)) return input;
     return parsed.ops
-      .map((op: any) => (typeof op?.insert === "string" ? op.insert : ""))
+      .map((op) => (typeof op?.insert === "string" ? op.insert : ""))
       .join("")
       .trim();
   } catch {
@@ -184,7 +209,6 @@ const CategoryManagementPage: React.FC = () => {
   const categoryStatusEntries = getEntries("META_CATEGORY_STATUS");
   const businessDomainEntries = getEntries(CATEGORY_BUSINESS_DOMAIN_DICT_CODE);
   const businessDomainConfigs = getCategoryBusinessDomainConfigs(businessDomainEntries);
-  const defaultBusinessDomain = getDefaultCategoryBusinessDomain(businessDomainEntries);
   const resolvedBusinessDomain = resolveCategoryBusinessDomain(businessDomainEntries, routeBusinessDomain);
   const currentBusinessDomain = resolvedBusinessDomain?.code;
   const activeBusinessDomain = currentBusinessDomain || '';
@@ -210,7 +234,7 @@ const CategoryManagementPage: React.FC = () => {
   const [renameGuidedEdit, setRenameGuidedEdit] = useState(false);
   const [previewEditBaseline, setPreviewEditBaseline] = useState("");
   const [previewEditCurrent, setPreviewEditCurrent] = useState("");
-  const [pendingPreviewFormValues, setPendingPreviewFormValues] = useState<Record<string, any> | null>(null);
+  const [pendingPreviewFormValues, setPendingPreviewFormValues] = useState<Record<string, unknown> | null>(null);
   const [previewForm] = Form.useForm();
 
   const [treeData, setTreeData] = useState<CategoryTreeNode[]>([]);
@@ -241,21 +265,6 @@ const CategoryManagementPage: React.FC = () => {
       }
       return node;
     });
-  };
-
-  const removeNodeFromTree = (
-    list: CategoryTreeNode[],
-    key: React.Key,
-  ): CategoryTreeNode[] => {
-    return list
-      .filter((node) => node.key !== key)
-      .map((node) => {
-        if (!node.children) return node;
-        return {
-          ...node,
-          children: removeNodeFromTree(node.children, key),
-        };
-      });
   };
 
   const removeNodesFromTree = (
@@ -319,7 +328,7 @@ const CategoryManagementPage: React.FC = () => {
     return parentMap;
   };
 
-  const mapNodeToTreeNode = (node: MetaCategoryNodeDto): CategoryTreeNode => {
+  const mapNodeToTreeNode = useCallback((node: MetaCategoryNodeDto): CategoryTreeNode => {
     const ref: CategoryNodeRef = {
       ...node,
       key: node.id,
@@ -335,7 +344,7 @@ const CategoryManagementPage: React.FC = () => {
       level: getLevelByNumber(node.level),
       icon: getStatusIcon(node.status, categoryStatusEntries),
     };
-  };
+  }, [categoryStatusEntries]);
 
   const findNodeInTree = (
     nodes: CategoryTreeNode[],
@@ -408,9 +417,9 @@ const CategoryManagementPage: React.FC = () => {
     return Array.from(affectedNodeIds);
   };
 
-  const fetchRootNodes = async () => {
+  const fetchRootNodes = useCallback(async () => {
     const page = await metaCategoryApi.listNodes({
-    businessDomain: activeBusinessDomain,
+      businessDomain: activeBusinessDomain,
       level: 1,
       status: "ALL",
       page: 0,
@@ -418,9 +427,9 @@ const CategoryManagementPage: React.FC = () => {
     });
 
     return (Array.isArray(page.content) ? page.content : []).map(mapNodeToTreeNode);
-  };
+  }, [activeBusinessDomain, mapNodeToTreeNode]);
 
-  const fetchChildNodes = async (parentId: React.Key) => {
+  const fetchChildNodes = useCallback(async (parentId: React.Key) => {
     const page = await metaCategoryApi.listNodes({
       businessDomain: activeBusinessDomain,
       parentId: String(parentId),
@@ -430,7 +439,7 @@ const CategoryManagementPage: React.FC = () => {
     });
 
     return (page.content || []).map(mapNodeToTreeNode);
-  };
+  }, [activeBusinessDomain, mapNodeToTreeNode]);
 
   const resolvePathKeys = async (targetNodeIds: string[]) => {
     const uniqueIds = Array.from(new Set(targetNodeIds.map((id) => String(id).trim()).filter(Boolean)));
@@ -516,6 +525,19 @@ const CategoryManagementPage: React.FC = () => {
     setDeleteModalOpen(true);
   };
 
+  const loadSegments = useCallback(async () => {
+    try {
+      const nodes = await fetchRootNodes();
+      setTreeData(nodes);
+      setLoadedKeys([]);
+      return nodes;
+    } catch (error) {
+      console.error(error);
+      messageApi.error("Failed to load segments");
+      return [] as CategoryTreeNode[];
+    }
+  }, [fetchRootNodes, messageApi]);
+
   // Initial Load (Segments)
   useEffect(() => {
     if (!currentBusinessDomain) {
@@ -536,22 +558,9 @@ const CategoryManagementPage: React.FC = () => {
     setLoadedKeys([]);
     setAttributeUnsavedState({ hasUnsavedChanges: false, unsavedNewCount: 0 });
     void loadSegments();
-  }, [currentBusinessDomain]);
+  }, [currentBusinessDomain, loadSegments]);
 
-  const loadSegments = async () => {
-    try {
-      const nodes = await fetchRootNodes();
-      setTreeData(nodes);
-      setLoadedKeys([]);
-      return nodes;
-    } catch (error) {
-      console.error(error);
-      messageApi.error("Failed to load segments");
-      return [] as CategoryTreeNode[];
-    }
-  };
-
-  const onLoadData = async (node: any): Promise<void> => {
+  const onLoadData = async (node: unknown): Promise<void> => {
     const { key, children } = node as CategoryTreeNode;
     if (children && children.length > 0) return;
 
@@ -913,7 +922,7 @@ const CategoryManagementPage: React.FC = () => {
           return;
         }
 
-        const currentStatus = toSemanticCategoryStatus((node.dataRef as any)?.status);
+        const currentStatus = toSemanticCategoryStatus(node.dataRef?.status);
         if (currentStatus === targetStatus) {
           messageApi.info("当前已是目标状态");
           return;
@@ -992,9 +1001,8 @@ const CategoryManagementPage: React.FC = () => {
           }
 
           messageApi.success("状态转换成功");
-        } catch (e: any) {
-          const msg = e?.message || e?.error || "状态转换失败";
-          messageApi.error(msg);
+        } catch (error) {
+          messageApi.error(getErrorMessage(error, "状态转换失败"));
         }
       };
 
@@ -1158,9 +1166,8 @@ const CategoryManagementPage: React.FC = () => {
       }
 
       messageApi.success("分类信息已更新");
-    } catch (e: any) {
-      const msg = e?.message || e?.error || "更新分类失败";
-      messageApi.error(msg);
+    } catch (error) {
+      messageApi.error(getErrorMessage(error, "更新分类失败"));
     } finally {
       setPreviewSaving(false);
     }
@@ -1507,7 +1514,7 @@ const CategoryManagementPage: React.FC = () => {
                     {
                       key: 'version',
                       label: '版本信息',
-                      children: <VersionGraph categoryId={previewDetail.id} versions={(previewDetail as any).historyVersions || []} />
+                      children: <VersionGraph categoryId={previewDetail.id} versions={(previewDetail as MetaCategoryDetailWithHistory).historyVersions || []} />
                     }
                   ]}
                 />

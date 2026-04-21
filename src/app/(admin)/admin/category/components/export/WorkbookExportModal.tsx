@@ -49,6 +49,16 @@ import {
   themeQuartz,
 } from 'ag-grid-community';
 import DraggableModal from '@/components/DraggableModal';
+import type {
+  MetaAttributeDefDetailDto,
+  MetaAttributeDefListItemDto,
+  MetaAttributeLovValueDto,
+} from '@/models/metaAttribute';
+import type {
+  MetaCategoryDetailDto,
+  MetaCategoryNodeDto,
+  MetaCategoryTreeNodeDto,
+} from '@/models/metaCategory';
 import { metaAttributeApi } from '@/services/metaAttribute';
 import { metaCategoryApi } from '@/services/metaCategory';
 import { workbookExportApi } from '@/services/workbookExport';
@@ -157,6 +167,75 @@ interface PreviewSheetRow extends PreviewTableRow {
   __sheetKind?: 'header';
 }
 
+interface ErrorWithMessage {
+  message?: string;
+  error?: string;
+}
+
+type CategoryTreeDataRef = Partial<Pick<
+  MetaCategoryNodeDto,
+  'id' | 'code' | 'name' | 'businessDomain' | 'parentId' | 'path' | 'level' | 'status'
+>>;
+
+type WorkbookExportCategoryLatestVersion = NonNullable<MetaCategoryDetailDto['latestVersion']>;
+
+type WorkbookExportCategoryDetail = Omit<MetaCategoryDetailDto, 'latestVersion'> & {
+  name?: string | null;
+  latestVersion?: WorkbookExportCategoryLatestVersion | null;
+  leaf?: boolean;
+  externalCode?: string | null;
+  codeKeyManualOverride?: boolean | null;
+  codeKeyFrozen?: boolean | null;
+  generatedRuleCode?: string | null;
+  generatedRuleVersionNo?: number | null;
+  copiedFromCategoryId?: string | null;
+};
+
+type WorkbookExportAttributeLatestVersion = NonNullable<MetaAttributeDefDetailDto['latestVersion']> & {
+  id?: string | null;
+  categoryVersionId?: string | null;
+  resolvedCodePrefix?: string | null;
+  hash?: string | null;
+};
+
+type WorkbookExportAttributeListItem = MetaAttributeDefListItemDto & {
+  id?: string | null;
+};
+
+type WorkbookExportAttributeDetail = Omit<MetaAttributeDefDetailDto, 'latestVersion'> & {
+  latestVersion?: WorkbookExportAttributeLatestVersion | null;
+  id?: string | null;
+  businessDomain?: string | null;
+  categoryId?: string | null;
+  categoryName?: string | null;
+  autoBindKey?: string | null;
+  keyManualOverride?: boolean | null;
+  keyFrozen?: boolean | null;
+  generatedRuleCode?: string | null;
+  generatedRuleVersionNo?: number | null;
+  lovDefId?: string | null;
+  lovStatus?: string | null;
+  lovDescription?: string | null;
+  sourceAttributeKey?: string | null;
+  lovKeyManualOverride?: boolean | null;
+  lovKeyFrozen?: boolean | null;
+  lovGeneratedRuleCode?: string | null;
+  lovGeneratedRuleVersionNo?: number | null;
+  lovCreatedAt?: string | null;
+  lovCreatedBy?: string | null;
+  lovVersionId?: string | null;
+  lovVersionNo?: number | null;
+  lovResolvedCodePrefix?: string | null;
+  lovHash?: string | null;
+  lovVersionCreatedAt?: string | null;
+  lovVersionCreatedBy?: string | null;
+};
+
+type WorkbookExportLovValue = MetaAttributeLovValueDto & {
+  name?: string | null;
+  disabled?: boolean | null;
+};
+
 const createEmptyRuntimeState = (): ExportRuntimeState => ({
   jobId: null,
   status: null,
@@ -191,8 +270,12 @@ const isTerminalStatus = (status: string | null | undefined): boolean => {
   return status === 'COMPLETED' || status === 'FAILED' || status === 'CANCELED';
 };
 
-const getErrorMessage = (error: any, fallback: string): string => {
-  return error?.message || error?.error || fallback;
+const getErrorMessage = (error: unknown, fallback: string): string => {
+  if (error && typeof error === 'object') {
+    const candidate = error as ErrorWithMessage;
+    return candidate.message || candidate.error || fallback;
+  }
+  return fallback;
 };
 
 const formatDateTime = (value?: string | null): string => {
@@ -265,9 +348,13 @@ const collectPersistedRootKeys = (nodes: DataNode[]): string[] => {
     .filter((key) => !key.startsWith('local_'));
 };
 
+const extractNodeRef = (node: DataNode | null | undefined): CategoryTreeDataRef | undefined => {
+  return (node as DataNode & { dataRef?: CategoryTreeDataRef }).dataRef;
+};
+
 const resolveBusinessDomains = (nodes: DataNode[], fallback?: string): string[] => {
   const domains = nodes
-    .map((node) => ((node as any)?.dataRef?.businessDomain as string | undefined) || fallback)
+    .map((node) => extractNodeRef(node)?.businessDomain || fallback)
     .filter((value): value is string => Boolean(value && value.trim()));
 
   return Array.from(new Set(domains));
@@ -293,20 +380,6 @@ const getModuleProgress = (
   }
 };
 
-const extractNodeRef = (node: DataNode | null | undefined) => {
-  return (node as any)?.dataRef as {
-    id?: string;
-    code?: string;
-    name?: string;
-    businessDomain?: string;
-    parentId?: string | null;
-    path?: string | null;
-    level?: number;
-    status?: string;
-  } | undefined;
-};
-
-
 const formatPreviewValue = (value: unknown): string | number | boolean => {
   if (value === null || value === undefined || value === '') {
     return '—';
@@ -323,10 +396,13 @@ const formatPreviewValue = (value: unknown): string | number | boolean => {
   return String(value);
 };
 
-const buildCategoryPreviewRecord = (detail: any, fallback?: PreviewScopeCategory): PreviewTableRow => {
-  const latestVersion = detail?.latestVersion ?? {};
+const buildCategoryPreviewRecord = (
+  detail?: WorkbookExportCategoryDetail,
+  fallback?: PreviewScopeCategory,
+): PreviewTableRow => {
+  const latestVersion = detail?.latestVersion;
   return {
-    key: String(detail?.id || fallback?.id || Math.random()),
+    key: String(detail?.id || fallback?.id || 'category-preview'),
     categoryId: detail?.id ?? fallback?.id,
     businessDomain: detail?.businessDomain ?? fallback?.businessDomain,
     categoryCode: detail?.code ?? fallback?.code,
@@ -363,13 +439,13 @@ const buildCategoryPreviewRecord = (detail: any, fallback?: PreviewScopeCategory
 };
 
 const buildAttributePreviewRecord = (
-  detail: any,
-  listItem: any,
+  detail: WorkbookExportAttributeDetail | undefined,
+  listItem: WorkbookExportAttributeListItem | undefined,
   categoryMeta?: PreviewScopeCategory,
 ): PreviewTableRow => {
-  const latestVersion = detail?.latestVersion ?? {};
+  const latestVersion = detail?.latestVersion;
   return {
-    key: String(detail?.key || listItem?.key || Math.random()),
+    key: String(detail?.key || listItem?.key || 'attribute-preview'),
     attributeId: detail?.id ?? listItem?.id,
     businessDomain: detail?.businessDomain ?? categoryMeta?.businessDomain,
     categoryId: detail?.categoryId ?? categoryMeta?.id,
@@ -414,14 +490,14 @@ const buildAttributePreviewRecord = (
 };
 
 const buildEnumPreviewRecord = (
-  option: any,
-  detail: any,
-  listItem: any,
+  option: WorkbookExportLovValue,
+  detail: WorkbookExportAttributeDetail,
+  listItem: WorkbookExportAttributeListItem,
   categoryMeta?: PreviewScopeCategory,
 ): PreviewTableRow => {
-  const latestVersion = detail?.latestVersion ?? {};
+  const latestVersion = detail?.latestVersion;
   return {
-    key: `${detail?.key || listItem?.key || 'attr'}_${option?.code || option?.value || Math.random()}`,
+    key: `${detail?.key || listItem?.key || 'attr'}_${option.code || option.value || 'enum-preview'}`,
     businessDomain: detail?.businessDomain ?? categoryMeta?.businessDomain,
     categoryId: detail?.categoryId ?? categoryMeta?.id,
     categoryCode: detail?.categoryCode ?? listItem?.categoryCode ?? categoryMeta?.code,
@@ -449,10 +525,10 @@ const buildEnumPreviewRecord = (
     lovVersionCreatedAt: detail?.lovVersionCreatedAt,
     lovVersionCreatedBy: detail?.lovVersionCreatedBy,
     optionCode: option?.code,
-    optionName: option?.name,
-    optionLabel: option?.label,
-    optionOrder: option?.order,
-    optionDisabled: option?.disabled,
+    optionName: option.name ?? option.value,
+    optionLabel: option.label,
+    optionOrder: option.order,
+    optionDisabled: option.disabled,
   };
 };
 
@@ -596,7 +672,7 @@ const WorkbookExportModal: React.FC<WorkbookExportModalProps> = ({
       setSchema(nextSchema);
       setConfig(nextConfig);
       setActiveModule(getEnabledWorkbookModuleKeys(nextConfig)[0] ?? 'CATEGORY');
-    } catch (error: any) {
+    } catch (error) {
       setSchemaError(getErrorMessage(error, '加载导出 schema 失败'));
     } finally {
       setSchemaLoading(false);
@@ -688,7 +764,7 @@ const WorkbookExportModal: React.FC<WorkbookExportModalProps> = ({
       const response = await workbookExportApi.plan(exportRequest);
       setPlanResult(response);
       return response;
-    } catch (error: any) {
+    } catch (error) {
       if (showError) {
         message.error(getErrorMessage(error, '导出计划预校验失败'));
       }
@@ -725,7 +801,7 @@ const WorkbookExportModal: React.FC<WorkbookExportModalProps> = ({
     }
 
     const merged = new Map<string, PreviewScopeCategory>();
-    const responses = await Promise.allSettled(
+      const responses = await Promise.allSettled(
       previewRootKeys.map((categoryId) => metaCategoryApi.getCategorySubtree({
         parentId: categoryId,
         includeRoot: true,
@@ -739,8 +815,10 @@ const WorkbookExportModal: React.FC<WorkbookExportModalProps> = ({
       if (response.status !== 'fulfilled') {
         continue;
       }
-      const rows = Array.isArray(response.value.data) ? response.value.data : [];
-      for (const row of rows as any[]) {
+      const rows: MetaCategoryTreeNodeDto[] = Array.isArray(response.value.data)
+        ? response.value.data
+        : [response.value.data];
+      for (const row of rows) {
         const key = String(row?.id || '');
         if (!key || merged.has(key)) {
           continue;
@@ -793,9 +871,9 @@ const WorkbookExportModal: React.FC<WorkbookExportModalProps> = ({
         rows = details.map((result, index) => {
           const fallback = targets[index];
           if (result.status === 'fulfilled') {
-            return buildCategoryPreviewRecord(result.value as any, fallback);
+            return buildCategoryPreviewRecord(result.value, fallback);
           }
-          return buildCategoryPreviewRecord({}, fallback);
+          return buildCategoryPreviewRecord(undefined, fallback);
         });
       }
 
@@ -816,12 +894,12 @@ const WorkbookExportModal: React.FC<WorkbookExportModalProps> = ({
         const items = listResults.flatMap((result) => result.status === 'fulfilled' ? result.value.content : []).slice(0, PREVIEW_ROW_LIMIT);
         const details = await Promise.allSettled(items.map((item) => metaAttributeApi.getAttributeDetail(item.key, resolvedBusinessDomain, false)));
         rows = details.map((result, index) => {
-          const listItem = items[index] as any;
+          const listItem = items[index];
           const categoryMeta = categoryMapByCode.get(listItem?.categoryCode || '');
           if (result.status === 'fulfilled') {
-            return buildAttributePreviewRecord(result.value as any, listItem, categoryMeta);
+            return buildAttributePreviewRecord(result.value, listItem, categoryMeta);
           }
-          return buildAttributePreviewRecord({}, listItem, categoryMeta);
+          return buildAttributePreviewRecord(undefined, listItem, categoryMeta);
         });
       }
 
@@ -841,7 +919,7 @@ const WorkbookExportModal: React.FC<WorkbookExportModalProps> = ({
         );
         const attributeItems = listResults.flatMap((result) => result.status === 'fulfilled' ? result.value.content : []);
         const enumCandidates = attributeItems
-          .filter((item: any) => ['enum', 'multi-enum'].includes(String(item?.dataType)) || item?.hasLov)
+          .filter((item) => ['enum', 'multi-enum'].includes(String(item.dataType)) || item.hasLov)
           .slice(0, PREVIEW_ENUM_ATTRIBUTE_LIMIT);
         const enumRows: PreviewTableRow[] = [];
 
@@ -851,10 +929,10 @@ const WorkbookExportModal: React.FC<WorkbookExportModalProps> = ({
           }
           try {
             const detail = await metaAttributeApi.getAttributeDetail(item.key, resolvedBusinessDomain, true);
-            const options = Array.isArray((detail as any)?.lovValues) ? (detail as any).lovValues : [];
+            const options = detail.lovValues ?? [];
             const categoryMeta = categoryMapByCode.get(item.categoryCode || '');
             for (const option of options) {
-              enumRows.push(buildEnumPreviewRecord(option, detail as any, item, categoryMeta));
+              enumRows.push(buildEnumPreviewRecord(option, detail, item, categoryMeta));
               if (enumRows.length >= PREVIEW_ROW_LIMIT) {
                 break;
               }
@@ -873,7 +951,7 @@ const WorkbookExportModal: React.FC<WorkbookExportModalProps> = ({
 
       setPreviewRows(rows);
       setPreviewLoading(false);
-    } catch (error: any) {
+    } catch (error) {
       if (previewRequestIdRef.current !== requestId) {
         return;
       }
@@ -1143,7 +1221,7 @@ const WorkbookExportModal: React.FC<WorkbookExportModalProps> = ({
         }
         resultLoadedJobIdRef.current = jobId;
         setRuntime((prev) => ({ ...prev, result }));
-      } catch (error: any) {
+      } catch (error) {
         if (!cancelled) {
           message.error(getErrorMessage(error, '加载导出结果失败'));
         }
@@ -1193,7 +1271,7 @@ const WorkbookExportModal: React.FC<WorkbookExportModalProps> = ({
         jobId: response.jobId,
       });
       message.success('导出任务已创建');
-    } catch (error: any) {
+    } catch (error) {
       setExporting(false);
       message.error(getErrorMessage(error, '启动导出任务失败'));
     }
@@ -1208,7 +1286,7 @@ const WorkbookExportModal: React.FC<WorkbookExportModalProps> = ({
       const response = await workbookExportApi.cancelJob(runtime.jobId);
       syncStatus(response);
       message.success('导出任务已取消');
-    } catch (error: any) {
+    } catch (error) {
       message.error(getErrorMessage(error, '取消导出任务失败'));
     }
   }, [message, runtime.jobId, runtime.status?.status, syncStatus]);
@@ -1225,7 +1303,7 @@ const WorkbookExportModal: React.FC<WorkbookExportModalProps> = ({
       triggerBlobDownload(blob, runtime.result.file.fileName);
       message.success('导出文件已开始下载');
       onSuccess?.();
-    } catch (error: any) {
+    } catch (error) {
       message.error(getErrorMessage(error, '下载导出文件失败'));
     } finally {
       setDownloadLoading(false);

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { App, Col, Row, Spin, theme } from "antd";
 import { FolderOutlined } from "@ant-design/icons";
@@ -13,7 +13,6 @@ import {
   useSensor,
   useSensors,
   type CollisionDetection,
-  type DragCancelEvent,
   type DragEndEvent,
   type DragOverEvent,
   type DragStartEvent,
@@ -235,8 +234,12 @@ const collectInitialSourceExpandedKeys = (
   return expandedKeys;
 };
 
-const getErrorMessage = (error: any, fallback: string) => {
-  return error?.message || error?.error || fallback;
+const getErrorMessage = (error: unknown, fallback: string) => {
+  if (error && typeof error === "object") {
+    const candidate = error as { message?: string; error?: string };
+    return candidate.message || candidate.error || fallback;
+  }
+  return fallback;
 };
 
 const rectContainsPoint = (
@@ -663,23 +666,33 @@ export default function TransferWorkspace({
   const { message: messageApi, modal } = App.useApp();
   const workspaceLayoutStyles = useMemo(
     () => `
-      .transfer-workspace-spin.ant-spin-nested-loading {
-        height: 100%;
-      }
-      .transfer-workspace-spin .ant-spin-container {
-        display: flex;
-        flex-direction: column;
-        height: 100%;
-        min-height: 0;
-      }
       .transfer-workspace-pane {
         display: flex;
         flex-direction: column;
-        flex: 1 1 0;
-        height: 0;
+        flex: 1 1 auto;
+        height: 100%;
         min-height: 0;
-        overflow: auto;
+        overflow: hidden;
         padding: 24px;
+        box-sizing: border-box;
+      }
+      .transfer-workspace-shell {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        flex: 1 1 auto;
+        height: 100%;
+        min-height: 0;
+      }
+      .transfer-workspace-loading-mask {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(255, 255, 255, 0.68);
+        backdrop-filter: blur(2px);
+        z-index: 12;
       }
       .${DRY_RUN_MODAL_CLASS} .ant-modal-confirm-body {
         display: block;
@@ -762,14 +775,14 @@ export default function TransferWorkspace({
   const canUndo = workspaceHistoryIndex > 0;
   const canRedo = workspaceHistoryIndex < workspaceHistory.length - 1;
 
-  const applyWorkspaceSnapshot = (snapshot: WorkspaceSnapshot) => {
+  const applyWorkspaceSnapshot = useCallback((snapshot: WorkspaceSnapshot) => {
     const nextSnapshot = cloneWorkspaceSnapshot(snapshot);
     setPendingAction(nextSnapshot.pendingAction);
     setPendingOperations(nextSnapshot.pendingOperations);
     setVirtualRelationMap(nextSnapshot.virtualRelationMap);
     setTargetExpandedKeys(nextSnapshot.targetExpandedKeys);
     setHoveredMovedSourceKey(null);
-  };
+  }, []);
 
   const pushWorkspaceSnapshot = (snapshot: WorkspaceSnapshot) => {
     const nextSnapshot = cloneWorkspaceSnapshot(snapshot);
@@ -780,12 +793,12 @@ export default function TransferWorkspace({
     setWorkspaceHistoryIndex((prev) => prev + 1);
   };
 
-  const resetWorkspaceSnapshots = () => {
+  const resetWorkspaceSnapshots = useCallback(() => {
     const emptySnapshot = createEmptyWorkspaceSnapshot();
     setWorkspaceHistory([emptySnapshot]);
     setWorkspaceHistoryIndex(0);
     applyWorkspaceSnapshot(emptySnapshot);
-  };
+  }, [applyWorkspaceSnapshot]);
 
   const transferNodeLookup = useMemo(() => {
     const lookup = collectNodeMap(targetData);
@@ -802,7 +815,6 @@ export default function TransferWorkspace({
       const pointer = args.pointerCoordinates;
       const rootElementRect =
         rootDropTargetRef.current?.getBoundingClientRect();
-      const rootRect = args.droppableRects.get(ROOT_DROP_TARGET_DROPPABLE_ID);
 
       if (
         pointer &&
@@ -865,7 +877,7 @@ export default function TransferWorkspace({
     setSourceData(nextSourceData);
     setSourceExpandedKeys(nextExpandedKeys);
     resetWorkspaceSnapshots();
-  }, [sourceNodesData]);
+  }, [resetWorkspaceSnapshots, sourceNodesData]);
 
   useEffect(() => {
     let cancelled = false;
@@ -899,7 +911,7 @@ export default function TransferWorkspace({
         );
         setTargetExpandedKeys([]);
         setTargetLoadedKeys([]);
-      } catch (error: any) {
+      } catch (error) {
         if (!cancelled) {
           setTargetData([]);
           messageApi.error(getErrorMessage(error, "加载目标分类失败"));
@@ -977,7 +989,7 @@ export default function TransferWorkspace({
     }),
   );
 
-  const handleLoadTargetChildren = async (
+  const handleLoadTargetChildren = useCallback(async (
     node: TransferTreeNode,
   ): Promise<void> => {
     if (
@@ -1010,7 +1022,7 @@ export default function TransferWorkspace({
     setTargetLoadedKeys((keys) =>
       keys.includes(node.key) ? keys : [...keys, node.key],
     );
-  };
+  }, [businessDomain, targetLoadedKeys]);
 
   const clearHoverTargetCommitTimer = () => {
     if (hoverTargetCommitTimerRef.current) {
@@ -1123,7 +1135,7 @@ export default function TransferWorkspace({
     }, 400);
 
     return () => clearTimeout(timer);
-  }, [hoveredTargetKey, disabledKeys, targetData, targetLoadedKeys]);
+  }, [disabledKeys, handleLoadTargetChildren, hoveredTargetKey, targetData, targetLoadedKeys]);
 
   const handleDragEnd = (event: DragEndEvent) => {
     const overNode = event.over?.data.current as TransferTreeNode | undefined;
@@ -1187,7 +1199,7 @@ export default function TransferWorkspace({
     pushWorkspaceSnapshot(nextSnapshot);
   };
 
-  const handleDragCancel = (_event: DragCancelEvent) => {
+  const handleDragCancel = () => {
     setShouldAnimateDragOverlayDropBack(true);
     commitHoveredTarget(null, "目标分类");
     setActiveDragNode(null);
@@ -1471,7 +1483,7 @@ export default function TransferWorkspace({
       }
 
       return response;
-    } catch (error: any) {
+    } catch (error) {
       messageApi.error(
         getErrorMessage(
           error,
@@ -1700,7 +1712,7 @@ export default function TransferWorkspace({
                   />
                 ),
               });
-            } catch (error: any) {
+            } catch (error) {
               confirmModal.update({
                 title: `${actionLabel}失败`,
                 closable: true,
@@ -1742,17 +1754,17 @@ export default function TransferWorkspace({
           })();
         },
       });
-    } catch (error: any) {
+    } catch (error) {
       messageApi.error(getErrorMessage(error, "批量转移预检失败"));
     } finally {
       setLoading(false);
     }
   };
 
-  const handleCancel = () => {
+  const handleCancel = useCallback(() => {
     setHoveredMovedSourceKey(null);
     resetWorkspaceSnapshots();
-  };
+  }, [resetWorkspaceSnapshots]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -1762,7 +1774,7 @@ export default function TransferWorkspace({
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
+  }, [handleCancel]);
 
   const displaySourceData = useMemo(() => {
     const movedSourceKeySet = new Set<string>();
@@ -1877,17 +1889,18 @@ export default function TransferWorkspace({
   const spinning = loading || externalLoading;
 
   return (
-    <Spin
-      spinning={spinning}
-      tip="正在处理中，请稍候..."
-      size="large"
-      wrapperClassName="transfer-workspace-spin"
-    >
+    <div className="transfer-workspace-shell">
       <style dangerouslySetInnerHTML={{ __html: workspaceLayoutStyles }} />
+      {spinning ? (
+        <div className="transfer-workspace-loading-mask">
+          <Spin spinning tip="正在处理中，请稍候..." size="large" />
+        </div>
+      ) : null}
       <div
         style={{
           display: "flex",
           flexDirection: "column",
+          flex: 1,
           height: "100%",
           minHeight: 0,
           background: token.colorBgContainer,
@@ -2030,7 +2043,7 @@ export default function TransferWorkspace({
                   }
                 >
                   {activeDragNode ? (
-                    <div style={getTransferNodeOverlayShellStyle(token)}>
+                    <div style={getTransferNodeOverlayShellStyle()}>
                       <div style={getTransferNodeOverlayCardStyle(token)}>
                         <div style={getTransferNodeOverlayActionStyle(token)}>
                           {overlayActionLabel}
@@ -2071,6 +2084,6 @@ export default function TransferWorkspace({
           loading={spinning}
         />
       </div>
-    </Spin>
+    </div>
   );
 }

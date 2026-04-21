@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useGlobalLoading } from '@/components/providers/GlobalLoadingProvider';
 import { authApi, isAuthErrorResponse } from '@/services/auth';
@@ -24,18 +24,20 @@ export default function AuthLayout({
   const router = useRouter();
   const pathname = usePathname();
   const { showLoading, hideLoading } = useGlobalLoading();
-  const [checkingAccess, setCheckingAccess] = useState(true);
+  const persistedHeaders = useMemo(() => readPersistedAuthHeaders(), []);
+  const currentSnapshot = useMemo(() => readPersistedAuthSnapshot(), []);
+  const hasPersistedPlatformToken = Boolean(
+    persistedHeaders.platformToken && persistedHeaders.platformTokenName,
+  );
+  const [checkingAccess, setCheckingAccess] = useState(hasPersistedPlatformToken);
 
   useEffect(() => {
-    let active = true;
-    const persistedHeaders = readPersistedAuthHeaders();
-    const currentSnapshot = readPersistedAuthSnapshot();
-    const isPlatformAdmin = currentSnapshot.platformAuth.principalType === 'platform-admin';
-
-    if (!persistedHeaders.platformToken || !persistedHeaders.platformTokenName) {
-      setCheckingAccess(false);
+    if (!hasPersistedPlatformToken) {
       return;
     }
+
+    let active = true;
+    const isPlatformAdmin = currentSnapshot.platformAuth.principalType === 'platform-admin';
 
     const loadingId = showLoading('正在检查登录状态...');
 
@@ -149,7 +151,7 @@ export default function AuthLayout({
       active = false;
       hideLoading(loadingId);
     };
-  }, [hideLoading, pathname, router, showLoading]);
+  }, [currentSnapshot, hasPersistedPlatformToken, hideLoading, pathname, persistedHeaders, router, showLoading]);
 
   if (checkingAccess) {
     return null;

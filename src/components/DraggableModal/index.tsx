@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import { Modal, type ModalProps, Button } from 'antd';
 import { FullscreenOutlined, FullscreenExitOutlined, CloseOutlined } from '@ant-design/icons';
 import { lightPalette } from '../../styles/colors';
@@ -7,26 +7,26 @@ interface DraggableModalProps extends ModalProps {
   children: React.ReactNode;
 }
 
+type ModalCancelEvent = Parameters<NonNullable<ModalProps['onCancel']>>[0];
+type ResolvedModalStyles = Exclude<ModalProps['styles'], undefined | ((info: { props: ModalProps }) => unknown)>;
+
 const DraggableModal: React.FC<DraggableModalProps> = ({ title, children, destroyOnClose, ...props }) => {
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const dragStartPos = useRef({ x: 0, y: 0 });
   const isDragging = useRef(false);
+  const modalStyles: ResolvedModalStyles = (
+    typeof props.styles === 'function' ? props.styles({ props }) : props.styles
+  ) ?? {};
 
-  // Reset position when opening
-  useEffect(() => {
-    if (props.open) {
+  const handleAfterOpenChange = (open: boolean) => {
+    props.afterOpenChange?.(open);
+
+    if (open) {
       setPosition({ x: 0, y: 0 });
       setIsFullScreen(false);
     }
-  }, [props.open]);
-
-  // Reset position when toggling fullscreen to avoid offset issues
-  useEffect(() => {
-    if (isFullScreen) {
-      setPosition({ x: 0, y: 0 });
-    }
-  }, [isFullScreen]);
+  };
 
   const handleMouseDown = (e: React.MouseEvent) => {
     if (isFullScreen) return;
@@ -78,7 +78,8 @@ const DraggableModal: React.FC<DraggableModalProps> = ({ title, children, destro
           icon={isFullScreen ? <FullscreenExitOutlined /> : <FullscreenOutlined />}
           onClick={(e) => {
             e.stopPropagation();
-            setIsFullScreen(!isFullScreen);
+            setPosition({ x: 0, y: 0 });
+            setIsFullScreen((prev) => !prev);
           }}
           style={{ color: lightPalette.iconColor }}
         />
@@ -88,7 +89,7 @@ const DraggableModal: React.FC<DraggableModalProps> = ({ title, children, destro
             icon={<CloseOutlined />}
             onClick={(e) => {
               e.stopPropagation();
-              props.onCancel?.(e as any);
+              props.onCancel?.(e as ModalCancelEvent);
             }}
             style={{ color: lightPalette.iconColor }}
           />
@@ -102,19 +103,20 @@ const DraggableModal: React.FC<DraggableModalProps> = ({ title, children, destro
       centered={isFullScreen ? false : (props.centered ?? true)}
       destroyOnHidden={destroyOnClose}
       {...props}
+      afterOpenChange={handleAfterOpenChange}
       closable={false}
       title={renderTitle()}
       mask={{ blur: false }}
       width={isFullScreen ? '100%' : props.width}
       style={isFullScreen ? { ...props.style, top: 0, margin: 0, padding: 0, maxWidth: '100vw', height: '100vh' } : props.style}
       styles={{
-        ...props.styles,
+        ...modalStyles,
         wrapper: {
-          ...((props.styles as any)?.wrapper),
+          ...(modalStyles.wrapper ?? {}),
           ...(isFullScreen ? { padding: 0 } : {}),
         },
         container: {
-          ...((props.styles as any)?.container),
+          ...(modalStyles.container ?? {}),
           ...(isFullScreen
             ? {
                 display: 'flex',
@@ -125,14 +127,14 @@ const DraggableModal: React.FC<DraggableModalProps> = ({ title, children, destro
             : {}),
         },
         body: {
-          ...((props.styles as any)?.body),
+          ...(modalStyles.body ?? {}),
           ...(isFullScreen ? { 
             flex: 1, 
             minHeight: 0,
             overflow: 'auto'
           } : {})
         }
-      } as any}
+      }}
       modalRender={(modal) => (
         <div style={{ 
             transform: isFullScreen ? 'none' : `translate(${position.x}px, ${position.y}px)`, 

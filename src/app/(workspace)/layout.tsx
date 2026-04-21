@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { HomeOutlined } from '@ant-design/icons';
 import { Skeleton } from 'antd';
 import { useRouter } from 'next/navigation';
@@ -101,17 +101,18 @@ const onboardingMenuData: MenuItem[] = [
 
 const WorkspaceOnboardingLayout: React.FC<React.PropsWithChildren> = ({ children }) => {
   const router = useRouter();
-  const [blocked, setBlocked] = useState(false);
+  const isPlatformAdmin = useMemo(
+    () => readPersistedAuthSnapshot().platformAuth.principalType === 'platform-admin',
+    [],
+  );
 
   useEffect(() => {
-    const snapshot = readPersistedAuthSnapshot();
-    if (snapshot.platformAuth.principalType === 'platform-admin') {
-      setBlocked(true);
+    if (isPlatformAdmin) {
       router.replace('/admin/dashboard');
     }
-  }, [router]);
+  }, [isPlatformAdmin, router]);
 
-  if (blocked) {
+  if (isPlatformAdmin) {
     return null;
   }
 
