@@ -17,22 +17,23 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Use Node.js 24.5
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: '24.5'
           cache: 'npm'
 
       - name: Install dependencies
         run: |
+          # Use legacy-peer-deps to avoid peer dependency resolution failures
           if [ -f package-lock.json ]; then
-            npm ci
+            npm ci --legacy-peer-deps
           else
-            npm install
+            npm install --legacy-peer-deps
           fi
 
       - name: Type check (tsc)
