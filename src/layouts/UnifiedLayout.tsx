@@ -52,8 +52,73 @@ const DefaultHomeTitle = "仪表盘";
 
 type RouteTab = {
   key: string;
-  label: React.ReactNode;
+  label: string;
   closable: boolean;
+};
+
+const createRouteTab = (
+  path: string,
+  label: string,
+  homePath: string,
+): RouteTab => ({
+  key: path,
+  label,
+  closable: path !== homePath,
+});
+
+const normalizeStoredTabs = (
+  stored: unknown,
+  homePath: string,
+  homeTitle: string,
+): RouteTab[] => {
+  if (!Array.isArray(stored)) {
+    return [createRouteTab(homePath, homeTitle, homePath)];
+  }
+
+  const normalized = stored
+    .filter((item): item is { key?: unknown; label?: unknown } => Boolean(item && typeof item === "object"))
+    .map((item) => {
+      const key = typeof item.key === "string" ? item.key : "";
+      const label = typeof item.label === "string" ? item.label : "";
+      if (!key) {
+        return null;
+      }
+      return createRouteTab(key, label || normalizeLabelFromPath(key, homePath, homeTitle), homePath);
+    })
+    .filter((item): item is RouteTab => item != null);
+
+  const deduped = normalized.filter(
+    (item, index, items) => items.findIndex((candidate) => candidate.key === item.key) === index,
+  );
+
+  if (!deduped.some((item) => item.key === homePath)) {
+    deduped.unshift(createRouteTab(homePath, homeTitle, homePath));
+  }
+
+  return deduped.length ? deduped : [createRouteTab(homePath, homeTitle, homePath)];
+};
+
+const upsertRouteTab = (
+  tabs: RouteTab[],
+  path: string,
+  label: string,
+  homePath: string,
+): RouteTab[] => {
+  const nextTabs = [...tabs];
+  const tab = createRouteTab(path, label, homePath);
+  const targetIndex = nextTabs.findIndex((item) => item.key === path);
+
+  if (targetIndex >= 0) {
+    nextTabs[targetIndex] = tab;
+  } else {
+    nextTabs.push(tab);
+  }
+
+  if (!nextTabs.some((item) => item.key === homePath)) {
+    nextTabs.unshift(createRouteTab(homePath, path === homePath ? label : DefaultHomeTitle, homePath));
+  }
+
+  return nextTabs;
 };
 
 const findMenuPath = (menus: MenuItem[], target: string): MenuItem[] | null => {
@@ -138,14 +203,32 @@ const UnifiedLayout: React.FC<UnifiedLayoutProps> = ({
     breadcrumbTrail[breadcrumbTrail.length - 1]?.name ??
     normalizeLabelFromPath(currentPath, homePath, homeTitle);
 
+  const tabStorageKey = useMemo(
+    () => `plm-open-tabs:${headerAuthMode}:${homePath}`,
+    [headerAuthMode, homePath],
+  );
+
   const [openedTabs, setOpenedTabs] = useState<RouteTab[]>(() => {
-    const initial: RouteTab[] = [
-      { key: homePath, label: homeTitle, closable: false },
-    ];
-    if (currentPath !== homePath) {
-      initial.push({ key: currentPath, label: activeLabel, closable: true });
+    const fallbackTabs = normalizeStoredTabs([], homePath, homeTitle);
+
+    if (typeof window === "undefined") {
+      return currentPath !== homePath
+        ? [...fallbackTabs, createRouteTab(currentPath, activeLabel, homePath)]
+        : fallbackTabs;
     }
-    return initial;
+
+    try {
+      const raw = window.localStorage.getItem(tabStorageKey);
+      const stored = raw ? JSON.parse(raw) : [];
+      const normalized = normalizeStoredTabs(stored, homePath, homeTitle);
+      return currentPath !== homePath && !normalized.some((tab) => tab.key === currentPath)
+        ? [...normalized, createRouteTab(currentPath, activeLabel, homePath)]
+        : normalized;
+    } catch {
+      return currentPath !== homePath
+        ? [...fallbackTabs, createRouteTab(currentPath, activeLabel, homePath)]
+        : fallbackTabs;
+    }
   });
 
   const palette = useMemo<AppPalette>(
@@ -155,6 +238,14 @@ const UnifiedLayout: React.FC<UnifiedLayoutProps> = ({
 
   const handleTabChange = (key: string) => {
     if (key !== currentPath) {
+      const targetLabel =
+        findMenuPath(menuData, key)?.[findMenuPath(menuData, key)!.length - 1]?.name ??
+        normalizeLabelFromPath(key, homePath, homeTitle);
+
+      setOpenedTabs((prev) => {
+        const withCurrent = upsertRouteTab(prev, currentPath, activeLabel, homePath);
+        return upsertRouteTab(withCurrent, key, targetLabel, homePath);
+      });
       router.push(key);
     }
   };
@@ -168,9 +259,13 @@ const UnifiedLayout: React.FC<UnifiedLayoutProps> = ({
         return;
       }
 
+      setOpenedTabs((prev) => {
+        const withCurrent = upsertRouteTab(prev, currentPath, activeLabel, homePath);
+        return upsertRouteTab(withCurrent, targetItem.path!, targetItem.name, homePath);
+      });
       router.push(targetItem.path);
     },
-    [currentPath, menuData, router],
+    [activeLabel, currentPath, homePath, menuData, router],
   );
 
   const handleTabRemove = useCallback(
@@ -247,7 +342,7 @@ const UnifiedLayout: React.FC<UnifiedLayoutProps> = ({
     const next = [...openedTabs];
 
     if (!next.some((tab) => tab.key === homePath)) {
-      next.unshift({ key: homePath, label: homeTitle, closable: false });
+      next.unshift(createRouteTab(homePath, homeTitle, homePath));
     }
 
     const currentIndex = next.findIndex((tab) => tab.key === currentPath);
@@ -259,14 +354,23 @@ const UnifiedLayout: React.FC<UnifiedLayoutProps> = ({
       return next;
     }
 
-    next.push({
-      key: currentPath,
-      label: activeLabel,
-      closable: currentPath !== homePath,
-    });
+    next.push(createRouteTab(currentPath, activeLabel, homePath));
 
     return next;
   }, [activeLabel, currentPath, homePath, homeTitle, openedTabs]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const serializedTabs = tabs.map((tab) => ({
+      key: tab.key,
+      label: tab.label,
+    }));
+
+    window.localStorage.setItem(tabStorageKey, JSON.stringify(serializedTabs));
+  }, [tabStorageKey, tabs]);
 
   useEffect(() => {
     const resizeObservers = tabResizeObservers.current;
